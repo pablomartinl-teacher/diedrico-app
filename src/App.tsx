@@ -54,7 +54,7 @@ export const useStore = create<CadStore>()((set, get) => ({
   
   saveData: () => { 
     localStorage.setItem('diedrico_pro_data', JSON.stringify(get().exercises)); 
-    alert("Lámina guardada en el navegador."); 
+    alert("Lámina guardada en la memoria del navegador."); 
   },
   loadData: () => { 
     const d = localStorage.getItem('diedrico_pro_data'); 
@@ -230,26 +230,42 @@ export const useStore = create<CadStore>()((set, get) => ({
       let pA = genPlane('α', 'oblicuo', true, -60); planes.push(pA);
       let px = originX + 60; let pz = ltY - 60; let py = ltY + 70;
 
-      if (opts.abatElem === 'punto') {
-          pts.push({ id:uid(), name: opts.abatEstado==='proy'?'A':'(A)', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1'}, {id:'n1', t:'1', x:px, y:py}] });
-          title = opts.abatEstado==='proy' ? `Abatir el punto A (en α) sobre ${opts.abatPlano.toUpperCase()}.` : `Dado (A) abatido en ${opts.abatPlano.toUpperCase()}, hallar proyecciones en α.`;
-      } else if (opts.abatElem === 'recta') {
-          segments.push({ id:uid(), label:opts.abatEstado==='proy'?'r2':'(r)2', p1:{x:px-40, y:pz+20}, p2:{x:px+60, y:pz-30} });
-          segments.push({ id:uid(), label:opts.abatEstado==='proy'?'r1':'(r)1', p1:{x:px-40, y:py-20}, p2:{x:px+60, y:py+40} });
-          title = opts.abatEstado==='proy' ? `Abatir la recta r (en α) sobre ${opts.abatPlano.toUpperCase()}.` : `Dada (r) abatida, hallar proyecciones en α.`;
-      } else {
-          for(let i=0; i<(opts.abatElem==='fig_reg'?3:4); i++) {
-              let nx = originX + (10 + i*30)*SF; let nz = ltY - (30 + rand(0,20))*SF; let ny = ltY + (20 + rand(0,20))*SF;
-              let nn = String.fromCharCode(65+i); let nLabel = opts.abatEstado==='proy' ? nn : `(${nn})`;
-              pts.push({ id:uid(), name: nLabel, nodes: [{id:uid(), t:'2', x:nx, y:nz, pairId:'n1'+i}, {id:'n1'+i, t:'1', x:nx, y:ny}] });
+      if (opts.abatEstado === 'proy') {
+          if (opts.abatElem === 'punto') {
+              pts.push({ id:uid(), name: 'A', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1'}, {id:'n1', t:'1', x:px, y:py}] });
+              title = `Abatir el punto A (en α) sobre ${opts.abatPlano.toUpperCase()}.`;
+          } else if (opts.abatElem === 'recta') {
+              segments.push({ id:uid(), label:'r2', p1:{x:px-40, y:pz+20}, p2:{x:px+60, y:pz-30} });
+              segments.push({ id:uid(), label:'r1', p1:{x:px-40, y:py-20}, p2:{x:px+60, y:py+40} });
+              title = `Abatir la recta r (en α) sobre ${opts.abatPlano.toUpperCase()}.`;
+          } else {
+              for(let i=0; i<(opts.abatElem==='fig_reg'?3:4); i++) {
+                  let nx = originX + (10 + i*30)*SF; let nz = ltY - (30 + rand(0,20))*SF; let ny = ltY + (20 + rand(0,20))*SF;
+                  let nn = String.fromCharCode(65+i);
+                  pts.push({ id:uid(), name: nn, nodes: [{id:uid(), t:'2', x:nx, y:nz, pairId:'n1'+i}, {id:'n1'+i, t:'1', x:nx, y:ny}] });
+              }
+              title = `Abatir figura en α para hallar V.M. sobre ${opts.abatPlano.toUpperCase()}.`;
           }
-          title = opts.abatEstado==='proy' ? `Abatir figura en α para hallar V.M. sobre ${opts.abatPlano.toUpperCase()}` : `Dada figura abatida en ${opts.abatPlano.toUpperCase()}, hallar proyecciones en α.`;
-      }
+      } else {
+          // Estado: Verdadera Magnitud (Desabatir)
+          let abatedTraceLabel = opts.abatPlano === 'ph' ? '(α2)' : '(α1)';
+          let abatedY = opts.abatPlano === 'ph' ? ltY + 120 : ltY - 120;
+          segments.push({ id:uid(), label: abatedTraceLabel, p1: {x: pA.vX, y: ltY}, p2: {x: pA.vX + 150, y: abatedY} });
 
-      if (opts.abatEstado === 'vm') {
-         let m = opts.abatPlano === 'ph' ? (pA.p1.y - ltY)/(pA.p1.x - pA.vX) : (pA.p2.y - ltY)/(pA.p2.x - pA.vX);
-         let mPerp = m !== 0 ? -1/m : 1000;
-         segments.push({ id: uid(), label: '', p1: {x: px, y: (opts.abatPlano==='ph'?py:pz)}, p2: {x: px - 80, y: (opts.abatPlano==='ph'?py:pz) - 80*mPerp}, isDashed: true });
+          if (opts.abatElem === 'punto') {
+              pts.push({ id:uid(), name: '(A)', nodes: [{id:uid(), t:'', x:px, y: opts.abatPlano==='ph'?py:pz}] });
+              title = `Dado (A) abatido en ${opts.abatPlano.toUpperCase()}, hallar sus proyecciones en α.`;
+          } else if (opts.abatElem === 'recta') {
+              segments.push({ id:uid(), label:'(r)', p1:{x:px-40, y:opts.abatPlano==='ph'?py-20:pz+20}, p2:{x:px+60, y:opts.abatPlano==='ph'?py+40:pz-30} });
+              title = `Dada (r) abatida en ${opts.abatPlano.toUpperCase()}, hallar sus proyecciones en α.`;
+          } else {
+              for(let i=0; i<(opts.abatElem==='fig_reg'?3:4); i++) {
+                  let nx = originX + (10 + i*30)*SF; let ny = opts.abatPlano==='ph' ? ltY + (40 + rand(0,20))*SF : ltY - (40 + rand(0,20))*SF;
+                  let nn = String.fromCharCode(65+i);
+                  pts.push({ id:uid(), name: `(${nn})`, nodes: [{id:uid(), t:'', x:nx, y:ny}] });
+              }
+              title = `Dada figura abatida en ${opts.abatPlano.toUpperCase()}, hallar proyecciones en α.`;
+          }
       }
     }
 
@@ -757,7 +773,7 @@ export default function App() {
   const [lineMethod, setLineMethod] = useState('coord'); const [lineType, setLineType] = useState('cualquiera');
   const [planeType, setPlaneType] = useState('oblicuo');
   const [quadA, setQuadA] = useState('any'); const [quadB, setQuadB] = useState('any');
-  const [reqPP, setReqPP] = useState(false); const [reqRegla, setReqRegla] = useState(false); const [reqOrigin, setReqOrigin] = useState(true);
+  const [reqPP, setReqPP] = useState(false); const [reqRegla, setReqRegla] = useState(false); const [reqOrigin, setReqOrigin] = useState(false);
 
   const [intSub, setIntSub] = useState('todas'); const [intP1, setIntP1] = useState('oblicuo'); const [intP2, setIntP2] = useState('oblicuo');
   const [paraSub, setParaSub] = useState('r_r_pto');
@@ -775,33 +791,38 @@ export default function App() {
     let currRowW = 0;
     
     exercises.forEach(ex => {
-      let hVal = 115;
-      if (ex.h.includes('mm')) hVal = parseFloat(ex.h);
-      else if (ex.h.includes('px')) hVal = parseFloat(ex.h) * 0.264583;
-      else hVal = parseFloat(ex.h) || 115;
-
-      let wVal = 100;
-      if (ex.w.includes('%')) wVal = parseFloat(ex.w);
+      let hVal = parseInt(ex.h) || 115;
+      let wVal = ex.w === '100%' ? 100 : 50;
 
       const MAX_H = pages.length === 0 ? 245 : 265; 
 
-      if (currRowW + wVal <= 100.1) {
-        currRowW += wVal;
-        currRowH = Math.max(currRowH, hVal);
+      let nextRowW = currRowW + wVal;
+      if (nextRowW <= 100) {
+        let nextRowH = Math.max(currRowH, hVal);
+        if (currY + nextRowH > MAX_H && currPage.length > 0) {
+           pages.push(currPage);
+           currPage = [];
+           currY = 0;
+           currRowW = wVal;
+           currRowH = hVal;
+        } else {
+           currRowW = nextRowW;
+           currRowH = nextRowH;
+        }
       } else {
-        currY += currRowH;
-        currRowW = wVal;
-        currRowH = hVal;
+        let nextY = currY + currRowH;
+        if (nextY + hVal > MAX_H && currPage.length > 0) {
+           pages.push(currPage);
+           currPage = [];
+           currY = 0;
+           currRowW = wVal;
+           currRowH = hVal;
+        } else {
+           currY = nextY;
+           currRowW = wVal;
+           currRowH = hVal;
+        }
       }
-
-      if (currY + currRowH > MAX_H && currPage.length > 0) {
-        pages.push(currPage);
-        currPage = [];
-        currY = 0;
-        currRowW = wVal;
-        currRowH = hVal;
-      }
-
       currPage.push(ex);
     });
     if (currPage.length > 0) pages.push(currPage);
@@ -818,7 +839,7 @@ export default function App() {
         .cajetin { width: 100%; border: 1.5px solid black; margin-bottom: 0; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
-        .exercise-box { border: 1.5px solid black; display: flex; flex-direction: column; position: relative; min-height: 115mm; margin-left: -1.5px; margin-top: -1.5px; resize: both; overflow: hidden; break-inside: avoid; }
+        .exercise-box { border: 1.5px solid black; display: flex; flex-direction: column; position: relative; min-height: 115mm; margin-left: -1.5px; margin-top: -1.5px; break-inside: avoid; }
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
         .btn-mini { background: #2ed573; border: none; padding: 3px 6px; font-size: 0.75rem; font-weight: bold; cursor: pointer; border-radius: 4px; }
@@ -883,11 +904,11 @@ export default function App() {
           </div>
           
           <div style={{display: 'flex', gap: '5px', marginTop: 'auto'}}>
-            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Guardar Lámina">💾 Guardar</button>
-            <button onClick={loadData} style={{ flex: 1, background: '#1e90ff', padding: '8px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Cargar Lámina Guardada">📂 Cargar</button>
+            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Guardar Lámina Localmente">💾 Guardar (Local)</button>
+            <button onClick={loadData} style={{ flex: 1, background: '#1e90ff', padding: '8px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Cargar Lámina Guardada">📂 Cargar (Local)</button>
           </div>
           <div style={{display: 'flex', gap: '5px', marginTop: '5px'}}>
-            <button onClick={useStore.getState().downloadData} style={{ flex: 1, background: '#2ed573', padding: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Descargar Lámina (.json)">⬇️ Descargar</button>
+            <button onClick={useStore.getState().downloadData} style={{ flex: 1, background: '#2ed573', padding: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Descargar Lámina (.json)">⬇️ Descargar (.json)</button>
             <label style={{ flex: 1, background: '#3742fa', padding: '8px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', textAlign: 'center' }} title="Abrir Lámina (.json)">
               <input type="file" accept=".json" style={{display:'none'}} onChange={(e) => {
                 const file = e.target.files?.[0];
@@ -900,7 +921,7 @@ export default function App() {
                 r.readAsText(file);
                 e.target.value = '';
               }} />
-              📁 Abrir
+              📁 Abrir (.json)
             </label>
           </div>
           <button onClick={() => window.print()} style={{ background: '#00d2ff', padding: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', marginTop: '5px' }}>🖨️ Imprimir Lámina</button>
@@ -922,13 +943,16 @@ export default function App() {
                 )}
 
                 {pageExs.map((ex) => (
-                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }} onMouseUp={(e) => { const tgt = e.target as HTMLElement; if (tgt.classList.contains('exercise-box')) updateBoxSize(ex.id, tgt.style.width, tgt.style.height); }}>
+                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }}>
                     <div style={{ position:'absolute', top: 5, right: 35, zIndex: 10, display: 'flex', gap: '5px' }}>
+                      <button className="no-print btn-mini" onClick={() => updateBoxSize(ex.id, ex.w === '50%' ? '100%' : '50%', ex.h)} title="Alternar Ancho (50% - 100%)">↔️</button>
+                      <button className="no-print btn-mini" onClick={() => updateBoxSize(ex.id, ex.w, (parseInt(ex.h)+15)+'mm')} title="Aumentar Alto">↕️+</button>
+                      <button className="no-print btn-mini" onClick={() => updateBoxSize(ex.id, ex.w, (Math.max(50, parseInt(ex.h)-15))+'mm')} title="Reducir Alto">↕️-</button>
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
                     </div>
-                    <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'25px', height:'25px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center' }}>X</button>
+                    <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'25px', height:'25px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center' }} title="Borrar Ejercicio">X</button>
                     <div className="exercise-title" contentEditable><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
                     {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
                     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
