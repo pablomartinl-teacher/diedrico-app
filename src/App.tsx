@@ -786,9 +786,8 @@ export default function App() {
   const paginatedExercises = useMemo(() => {
     let pages: Exercise[][] = []; 
     let currPage: Exercise[] = [];
-    let currY = 0; 
-    let currRowH = 0;
-    let currRowW = 0;
+    let col1Y = 0; 
+    let col2Y = 0;
     
     exercises.forEach(ex => {
       let hVal = parseInt(ex.h) || 115;
@@ -796,33 +795,53 @@ export default function App() {
 
       const MAX_H = pages.length === 0 ? 245 : 265; 
 
-      if (currRowW + wVal <= 101) {
-        let nextRowH = Math.max(currRowH, hVal);
-        if (currY + nextRowH > MAX_H && currPage.length > 0) {
-           pages.push(currPage);
-           currPage = [];
-           currY = 0;
-           currRowW = wVal;
-           currRowH = hVal;
+      if (wVal > 55) {
+        let startY = Math.max(col1Y, col2Y);
+        if (startY + hVal > MAX_H && currPage.length > 0) {
+          pages.push(currPage);
+          currPage = [];
+          col1Y = hVal;
+          col2Y = hVal;
         } else {
-           currRowW += wVal;
-           currRowH = nextRowH;
+          col1Y = startY + hVal;
+          col2Y = startY + hVal;
         }
+        currPage.push(ex);
       } else {
-        let nextY = currY + currRowH;
-        if (nextY + hVal > MAX_H && currPage.length > 0) {
-           pages.push(currPage);
-           currPage = [];
-           currY = 0;
-           currRowW = wVal;
-           currRowH = hVal;
+        if (col1Y <= col2Y) {
+          if (col1Y + hVal > MAX_H && currPage.length > 0) {
+            if (col2Y + hVal <= MAX_H) {
+              col2Y += hVal;
+              currPage.push(ex);
+            } else {
+              pages.push(currPage);
+              currPage = [];
+              col1Y = hVal;
+              col2Y = 0;
+              currPage.push(ex);
+            }
+          } else {
+            col1Y += hVal;
+            currPage.push(ex);
+          }
         } else {
-           currY = nextY;
-           currRowW = wVal;
-           currRowH = hVal;
+          if (col2Y + hVal > MAX_H && currPage.length > 0) {
+            if (col1Y + hVal <= MAX_H) {
+              col1Y += hVal;
+              currPage.push(ex);
+            } else {
+              pages.push(currPage);
+              currPage = [];
+              col1Y = hVal;
+              col2Y = 0;
+              currPage.push(ex);
+            }
+          } else {
+            col2Y += hVal;
+            currPage.push(ex);
+          }
         }
       }
-      currPage.push(ex);
     });
     if (currPage.length > 0) pages.push(currPage);
     if (pages.length === 0) pages = [[]];
@@ -841,7 +860,7 @@ export default function App() {
         .exercise-box { float: left; border: 1.5px solid black; display: flex; flex-direction: column; position: relative; margin-left: -1.5px; margin-top: -1.5px; break-inside: avoid; box-sizing: border-box; }
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
-        .btn-mini { background: #2ed573; border: none; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
         .side-handle-r { position: absolute; right: -12px; top: 0; bottom: 0; width: 25px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
         .side-handle-b { position: absolute; left: 0; right: 0; bottom: -12px; height: 25px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
@@ -854,7 +873,14 @@ export default function App() {
           .sheet-container { padding: 10px !important; }
           .a4-sheet { padding: 5mm; }
         }
-        @media print { body { background: white; } .no-print { display: none !important; } .sheet-container { padding: 0; gap: 0; } .a4-sheet { box-shadow: none; margin: 0; padding: 10mm; page-break-after: always; display: flow-root; } .exercise-box { resize: none; overflow: hidden; border: 1.5px solid black; } }
+        @media print { 
+          body, html { background: white; height: auto !important; overflow: visible !important; } 
+          .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
+          .no-print { display: none !important; } 
+          .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; } 
+          .a4-sheet { box-shadow: none; margin: 0; padding: 10mm; page-break-after: always; display: flow-root; } 
+          .exercise-box { resize: none; overflow: hidden; border: 1.5px solid black; } 
+        }
       `}</style>
       
       <div className="app-layout" style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -954,9 +980,8 @@ export default function App() {
                 )}
 
                 {pageExs.map((ex) => (
-                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }}>
+                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h, clear: ex.w === '100%' ? 'both' : 'none' }}>
                     
-                    {/* Tiradores manuales libres */}
                     <div className="no-print side-handle-r" onPointerDown={(e) => {
                         e.preventDefault(); e.stopPropagation();
                         const startX = e.clientX; 
@@ -985,14 +1010,16 @@ export default function App() {
                         window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
                     }} />
 
-                    <div style={{ position:'absolute', top: 5, right: 35, zIndex: 10, display: 'flex', gap: '5px' }}>
-                      <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
-                      <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
-                      <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
-                    </div>
-                    <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'30px', height:'30px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'16px' }} title="Borrar Ejercicio">X</button>
-                    <div className="exercise-title" contentEditable><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
+                    <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
+                    <div className="exercise-title" contentEditable style={{ paddingRight: '30px' }}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
                     {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
+                    
+                    <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
+                      <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
+                      <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
+                      <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
+                    </div>
+
                     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                       <View2D ex={ex} />
                     </div>
