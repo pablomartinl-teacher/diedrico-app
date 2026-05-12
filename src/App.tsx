@@ -133,7 +133,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       if (opts.planeType === 'frontal') { sx = '∞'; sz = '∞'; } if (opts.planeType === 'paralelo_lt') { sx = '∞'; }
       
       dataStr = `Plano α(${sx}, ${sy}, ${sz})`; 
-      title = "Dibujar proraciones de las trazas. Indicar cuadrantes del plano y tipo de plano.";
+      title = "Dibujar proyecciones de las trazas. Indicar cuadrantes del plano y tipo de plano.";
     }
     else if (t === 'intersecciones') {
       w = "100%"; dataStr = "";
@@ -786,9 +786,8 @@ export default function App() {
   const paginatedExercises = useMemo(() => {
     let pages: Exercise[][] = []; 
     let currPage: Exercise[] = [];
-    let currY = 0; 
-    let currRowH = 0;
-    let currRowW = 0;
+    let col1Y = 0; 
+    let col2Y = 0;
     
     exercises.forEach(ex => {
       let hVal = parseInt(ex.h) || 115;
@@ -796,34 +795,53 @@ export default function App() {
 
       const MAX_H = pages.length === 0 ? 245 : 265; 
 
-      let nextRowW = currRowW + wVal;
-      if (nextRowW <= 100) {
-        let nextRowH = Math.max(currRowH, hVal);
-        if (currY + nextRowH > MAX_H && currPage.length > 0) {
-           pages.push(currPage);
-           currPage = [];
-           currY = 0;
-           currRowW = wVal;
-           currRowH = hVal;
+      if (wVal === 100) {
+        let startY = Math.max(col1Y, col2Y);
+        if (startY + hVal > MAX_H && currPage.length > 0) {
+          pages.push(currPage);
+          currPage = [];
+          col1Y = hVal;
+          col2Y = hVal;
         } else {
-           currRowW = nextRowW;
-           currRowH = nextRowH;
+          col1Y = startY + hVal;
+          col2Y = startY + hVal;
         }
+        currPage.push(ex);
       } else {
-        let nextY = currY + currRowH;
-        if (nextY + hVal > MAX_H && currPage.length > 0) {
-           pages.push(currPage);
-           currPage = [];
-           currY = 0;
-           currRowW = wVal;
-           currRowH = hVal;
+        if (col1Y <= col2Y) {
+          if (col1Y + hVal > MAX_H && currPage.length > 0) {
+            if (col2Y + hVal <= MAX_H) {
+              col2Y += hVal;
+              currPage.push(ex);
+            } else {
+              pages.push(currPage);
+              currPage = [];
+              col1Y = hVal;
+              col2Y = 0;
+              currPage.push(ex);
+            }
+          } else {
+            col1Y += hVal;
+            currPage.push(ex);
+          }
         } else {
-           currY = nextY;
-           currRowW = wVal;
-           currRowH = hVal;
+          if (col2Y + hVal > MAX_H && currPage.length > 0) {
+            if (col1Y + hVal <= MAX_H) {
+              col1Y += hVal;
+              currPage.push(ex);
+            } else {
+              pages.push(currPage);
+              currPage = [];
+              col1Y = hVal;
+              col2Y = 0;
+              currPage.push(ex);
+            }
+          } else {
+            col2Y += hVal;
+            currPage.push(ex);
+          }
         }
       }
-      currPage.push(ex);
     });
     if (currPage.length > 0) pages.push(currPage);
     if (pages.length === 0) pages = [[]];
@@ -835,17 +853,17 @@ export default function App() {
       <style>{`
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e2f; color: #fff; }
         .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; }
-        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 15mm; box-shadow: 0 0 20px rgba(0,0,0,0.5); color: black; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0; box-sizing: border-box; break-inside: avoid; }
+        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 15mm; box-shadow: 0 0 20px rgba(0,0,0,0.5); color: black; display: flow-root; box-sizing: border-box; break-inside: avoid; }
         .cajetin { width: 100%; border: 1.5px solid black; margin-bottom: 0; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
-        .exercise-box { border: 1.5px solid black; display: flex; flex-direction: column; position: relative; min-height: 115mm; margin-left: -1.5px; margin-top: -1.5px; break-inside: avoid; }
+        .exercise-box { float: left; border: 1.5px solid black; display: flex; flex-direction: column; position: relative; margin-left: -1.5px; margin-top: -1.5px; break-inside: avoid; }
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
         .btn-mini { background: #2ed573; border: none; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; cursor: pointer; border-radius: 4px; }
-        .side-handle-r { position: absolute; right: -5px; top: 0; bottom: 0; width: 25px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.03); transition: background 0.2s; touch-action: none; }
+        .side-handle-r { position: absolute; right: -12px; top: 0; bottom: 0; width: 25px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
-        .side-handle-b { position: absolute; left: 0; right: 0; bottom: -5px; height: 25px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.03); transition: background 0.2s; touch-action: none; }
+        .side-handle-b { position: absolute; left: 0; right: 0; bottom: -12px; height: 25px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-b:hover, .side-handle-b:active { background: rgba(0, 210, 255, 0.4); }
         
         @media (max-width: 768px) {
@@ -855,7 +873,7 @@ export default function App() {
           .sheet-container { padding: 10px !important; }
           .a4-sheet { padding: 5mm; }
         }
-        @media print { body { background: white; } .no-print { display: none !important; } .sheet-container { padding: 0; gap: 0; } .a4-sheet { box-shadow: none; margin: 0; padding: 10mm; page-break-after: always; } .exercise-box { resize: none; overflow: hidden; border: 1.5px solid black; } }
+        @media print { body { background: white; } .no-print { display: none !important; } .sheet-container { padding: 0; gap: 0; } .a4-sheet { box-shadow: none; margin: 0; padding: 10mm; page-break-after: always; display: flow-root; } .exercise-box { resize: none; overflow: hidden; border: 1.5px solid black; } }
       `}</style>
       
       <div className="app-layout" style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
@@ -937,7 +955,7 @@ export default function App() {
             </label>
           </div>
           <button onClick={() => window.print()} style={{ background: '#00d2ff', padding: '15px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', marginTop: '5px', fontSize:'16px' }}>🖨️ Imprimir Lámina</button>
-          <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Click derecho (o mantener calcado)</b> en zona de conflicto para aislar qué editar.</div>
+          <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Toque doble</b> o mantén presionado para borrar un elemento.</div>
         </div>
 
         <div className="main-area" style={{ flex: 1, background: '#151520', overflowY: 'auto' }}>
@@ -955,9 +973,9 @@ export default function App() {
                 )}
 
                 {pageExs.map((ex) => (
-                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }}>
+                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h, clear: ex.w === '100%' ? 'both' : 'none' }}>
                     
-                    {/* Tiradores manuales invisibles para móviles y PC */}
+                    {/* Tiradores manuales invisibles adaptados para escritorio y móviles */}
                     <div className="no-print side-handle-r" onPointerDown={(e) => {
                         e.preventDefault(); e.stopPropagation();
                         const startX = e.clientX; 
