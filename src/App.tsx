@@ -28,6 +28,7 @@ interface CadStore {
   removeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano', elemId: string) => void;
   saveData: () => void;
   loadData: () => void;
+  downloadData: () => void;
 }
 
 const SF = 3.5;
@@ -52,13 +53,21 @@ export const useStore = create<CadStore>()((set, get) => ({
   exercises: initialExercises,
   
   saveData: () => { 
+    localStorage.setItem('diedrico_pro_data', JSON.stringify(get().exercises)); 
+    alert("Lámina guardada en el navegador."); 
+  },
+  loadData: () => { 
+    const d = localStorage.getItem('diedrico_pro_data'); 
+    if (d) set({ exercises: JSON.parse(d) }); 
+    else alert("No hay datos guardados."); 
+  },
+  downloadData: () => { 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(get().exercises));
     const a = document.createElement('a');
     a.href = dataStr;
     a.download = `lamina_diedrico_${new Date().getTime()}.json`;
     a.click();
   },
-  loadData: () => { /* Manejado en el input del UI */ },
 
   addExercise: (opts) => set((state) => {
     const originX = 400; const ltY = 250;
@@ -82,7 +91,8 @@ export const useStore = create<CadStore>()((set, get) => ({
     };
 
     if (t === 'punto_coord') {
-      w = "100%"; title = "Dibujar las proyecciones de los puntos dados. Indicar cuadrantes.";
+      w = "100%"; 
+      title = "Dibujar las proyecciones de los puntos. Indicar sus cuadrantes, si están sobre pv o ph, o si están sobre un bisector.";
       let dArr = [];
       for(let i=0; i<opts.ptCount; i++) {
         let n = String.fromCharCode(65+i);
@@ -101,14 +111,16 @@ export const useStore = create<CadStore>()((set, get) => ({
       if(opts.lineType === 'perfil') { bx = ax; } if(opts.lineType === 'paralela_lt') { by = ay; bz = az; }
       if(opts.lineType === 'incidente_lt') { ay = 0; az = 0; ax = 0; } if(opts.lineType === 'contenida_pv') { ay = 0; by = 0; } if(opts.lineType === 'contenida_ph') { az = 0; bz = 0; }
 
+      title = "Dibujar las proyecciones de la recta. Indicar trazas, cuadrantes y tipo de recta.";
+      
       if (opts.lineMethod === 'coord') {
-        dataStr = `A(${ax}, ${ay}, ${az})  |  B(${bx}, ${by}, ${bz})`; title = `Representar proyecciones de la recta ${opts.lineType !== 'cualquiera' ? opts.lineType : ''} definida por A y B.`;
+        dataStr = `A(${ax}, ${ay}, ${az})  |  B(${bx}, ${by}, ${bz})`; 
       } else if (opts.lineMethod === 'puntos') {
-        title = `Dada la recta por sus puntos A y B, hallar sus trazas.`; dataStr = "";
+        dataStr = "";
         pts.push({ id:uid(), name:'A', nodes:[{id:uid(), t:'2', x:originX+ax*SF, y:ltY-az*SF, pairId:'n1A'}, {id:'n1A', t:'1', x:originX+ax*SF, y:ltY+ay*SF}] });
         pts.push({ id:uid(), name:'B', nodes:[{id:uid(), t:'2', x:originX+bx*SF, y:ltY-bz*SF, pairId:'n1B'}, {id:'n1B', t:'1', x:originX+bx*SF, y:ltY+by*SF}] });
       } else {
-        title = `Dadas las proyecciones de la recta r, hallar sus trazas.`; dataStr = "";
+        dataStr = "";
         segments.push({ id:uid(), label:'r2', p1:{x:originX+ax*SF, y:ltY-az*SF}, p2:{x:originX+bx*SF, y:ltY-bz*SF} }, { id:uid(), label:'r1', p1:{x:originX+ax*SF, y:ltY+ay*SF}, p2:{x:originX+bx*SF, y:ltY+by*SF} });
       }
     }
@@ -119,23 +131,23 @@ export const useStore = create<CadStore>()((set, get) => ({
       if (opts.planeType === 'proy_vert') sy = '∞'; if (opts.planeType === 'proy_horiz') sz = '∞';
       if (opts.planeType === 'perfil') { sy = '∞'; sz = '∞'; } if (opts.planeType === 'horizontal') { sx = '∞'; sy = '∞'; }
       if (opts.planeType === 'frontal') { sx = '∞'; sz = '∞'; } if (opts.planeType === 'paralelo_lt') { sx = '∞'; }
-      dataStr = `Plano α(${sx}, ${sy}, ${sz})`; title = `Representar trazas del plano ${opts.planeType !== 'cualquiera' ? opts.planeType : ''}.`;
+      
+      dataStr = `Plano α(${sx}, ${sy}, ${sz})`; 
+      title = "Dibujar proyecciones de las trazas. Indicar cuadrantes del plano y tipo de plano.";
     }
     else if (t === 'intersecciones') {
       w = "100%"; dataStr = "";
+      title = "Hallar la recta de intersección de los planos.";
       if (opts.intSub === 'todas') {
         planes.push(genPlane('α', opts.intP1, true, -50), genPlane('β', opts.intP2, false, 50));
-        title = `Hallar la recta de intersección de los planos α (${opts.intP1.replace('_',' ')}) y β (${opts.intP2.replace('_',' ')}).`;
       } else if (opts.intSub === 'paralelas') {
         let pA = genPlane('α', 'oblicuo', true, -60); let pB = genPlane('β', 'oblicuo', false, 60); 
         pB.p1.y = ltY + ((pA.p1.y - ltY)/(pA.p1.x - pA.vX)) * (pB.p1.x - pB.vX); planes.push(pA, pB);
-        title = "Hallar intersección de los planos sabiendo que sus trazas horizontales son paralelas.";
       } else if (opts.intSub === 'no_existe') {
         planes.push(genPlane('α', 'horizontal', true), genPlane('β', 'oblicuo', false, 40)); 
-        title = "Intersección con un plano donde una traza no existe.";
       } else if (opts.intSub === 'paralelas_lt') {
         planes.push(genPlane('α', 'paralelo_lt', true), genPlane('β', 'paralelo_lt', false, 0));
-        opts.reqPP = true; title = "Intersección de dos planos paralelos a LT (Usar perfil).";
+        opts.reqPP = true;
       }
     } 
     else if (t === 'paralelismo') {
@@ -239,6 +251,10 @@ export const useStore = create<CadStore>()((set, get) => ({
          let mPerp = m !== 0 ? -1/m : 1000;
          segments.push({ id: uid(), label: '', p1: {x: px, y: (opts.abatPlano==='ph'?py:pz)}, p2: {x: px - 80, y: (opts.abatPlano==='ph'?py:pz) - 80*mPerp}, isDashed: true });
       }
+    }
+
+    if (opts.reqPP) {
+      title += " Dibujar tercera proyección.";
     }
 
     const newEx: Exercise = {
@@ -733,6 +749,7 @@ export default function App() {
   const addFreeElement = useStore((state) => state.addFreeElement);
   const updateBoxSize = useStore((state) => state.updateBoxSize);
   const saveData = useStore((state) => state.saveData);
+  const loadData = useStore((state) => state.loadData);
   
   const [type, setType] = useState('punto_coord');
   
@@ -751,17 +768,41 @@ export default function App() {
   const handleAdd = () => { addExercise({ type, ptCount, lineMethod, lineType, planeType, quadA, quadB, reqPP, reqRegla, reqOrigin, intSub, intP1, intP2, paraSub, perpSub, pertSub, pertPlaneType, abatElem, abatEstado, abatPlano }); };
 
   const paginatedExercises = useMemo(() => {
-    let pages: Exercise[][] = []; let currPage: Exercise[] = [];
-    let currH = 0; 
+    let pages: Exercise[][] = []; 
+    let currPage: Exercise[] = [];
+    let currY = 0; 
+    let currRowH = 0;
+    let currRowW = 0;
+    
     exercises.forEach(ex => {
       let hVal = 115;
       if (ex.h.includes('mm')) hVal = parseFloat(ex.h);
       else if (ex.h.includes('px')) hVal = parseFloat(ex.h) * 0.264583;
       else hVal = parseFloat(ex.h) || 115;
 
+      let wVal = 100;
+      if (ex.w.includes('%')) wVal = parseFloat(ex.w);
+
       const MAX_H = pages.length === 0 ? 245 : 265; 
-      if (currH + hVal > MAX_H && currPage.length > 0) { pages.push(currPage); currPage = []; currH = 0; }
-      currPage.push(ex); currH += hVal;
+
+      if (currRowW + wVal <= 100.1) {
+        currRowW += wVal;
+        currRowH = Math.max(currRowH, hVal);
+      } else {
+        currY += currRowH;
+        currRowW = wVal;
+        currRowH = hVal;
+      }
+
+      if (currY + currRowH > MAX_H && currPage.length > 0) {
+        pages.push(currPage);
+        currPage = [];
+        currY = 0;
+        currRowW = wVal;
+        currRowH = hVal;
+      }
+
+      currPage.push(ex);
     });
     if (currPage.length > 0) pages.push(currPage);
     if (pages.length === 0) pages = [[]];
@@ -842,8 +883,12 @@ export default function App() {
           </div>
           
           <div style={{display: 'flex', gap: '5px', marginTop: 'auto'}}>
-            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Descargar Lámina (.json)">💾 Descargar</button>
-            <label style={{ flex: 1, background: '#1e90ff', padding: '12px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', textAlign: 'center' }} title="Cargar Lámina (.json)">
+            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Guardar Lámina">💾 Guardar</button>
+            <button onClick={loadData} style={{ flex: 1, background: '#1e90ff', padding: '8px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Cargar Lámina Guardada">📂 Cargar</button>
+          </div>
+          <div style={{display: 'flex', gap: '5px', marginTop: '5px'}}>
+            <button onClick={useStore.getState().downloadData} style={{ flex: 1, background: '#2ed573', padding: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Descargar Lámina (.json)">⬇️ Descargar</button>
+            <label style={{ flex: 1, background: '#3742fa', padding: '8px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', textAlign: 'center' }} title="Abrir Lámina (.json)">
               <input type="file" accept=".json" style={{display:'none'}} onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
@@ -855,10 +900,10 @@ export default function App() {
                 r.readAsText(file);
                 e.target.value = '';
               }} />
-              📂 Abrir
+              📁 Abrir
             </label>
           </div>
-          <button onClick={() => window.print()} style={{ background: '#00d2ff', padding: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }}>🖨️ Imprimir Lámina</button>
+          <button onClick={() => window.print()} style={{ background: '#00d2ff', padding: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', marginTop: '5px' }}>🖨️ Imprimir Lámina</button>
           <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Click derecho</b> en zona de conflicto para aislar qué editar.<br/><b>Doble clic</b> o icono 🗑️ para borrar.</div>
         </div>
 
