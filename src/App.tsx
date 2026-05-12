@@ -10,7 +10,7 @@ export interface ExPlane { id: string; name: string; type: string; vX: number; p
 export interface ExSegment { id: string; label: string; p1: {x:number, y:number}; p2: {x:number, y:number}; isDashed?: boolean; }
 export interface Exercise {
   id: string; title: string; type: string; w: string; h: string; dataStr: string;
-  state: { ltY: number; originX: number; ppX: number; reqRegla: boolean; reqPP: boolean; reqOrigin: boolean; planes: ExPlane[]; segments: ExSegment[]; pts: {id:string, name:string, nodes:ExNode[]}[] };
+  state: { ltY: number; originX: number; ppX: number; reqRegla: boolean; reqPP: boolean; reqOrigin: boolean; planes: ExPlane[]; segments: ExSegment[]; pts: {id:string, name:string, nodes:ExNode[]}[]; bounds?: { ltX1: number; ltX2: number; oY1: number; oY2: number; pY1: number; pY2: number; } };
 }
 
 interface CadStore {
@@ -233,7 +233,7 @@ export const useStore = create<CadStore>()((set, get) => ({
 
     const newEx: Exercise = {
       id: uid(), type: t, title, w, h, dataStr,
-      state: { ltY, originX, ppX: 750, reqRegla: opts.reqRegla, reqPP: opts.reqPP, reqOrigin: opts.reqOrigin, planes, segments, pts }
+      state: { ltY, originX, ppX: 750, reqRegla: opts.reqRegla, reqPP: opts.reqPP, reqOrigin: opts.reqOrigin, planes, segments, pts, bounds: { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 } }
     };
     return { exercises: [...state.exercises, newEx] };
   }),
@@ -351,6 +351,8 @@ export const useStore = create<CadStore>()((set, get) => ({
     exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
+      if (!s.bounds) s.bounds = { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+
       if (target === 'pp') s.ppX = valX;
       else if (target === 'origin') {
         let dx = valX - s.originX; let dy = valY - s.ltY;
@@ -359,6 +361,13 @@ export const useStore = create<CadStore>()((set, get) => ({
         s.segments = s.segments.map(sg => ({...sg, p1:{x:sg.p1.x+dx, y:sg.p1.y+dy}, p2:{x:sg.p2.x+dx, y:sg.p2.y+dy}}));
         s.pts = s.pts.map(p => ({...p, nodes: p.nodes.map(n => ({...n, x: n.x+dx, y: n.y+dy}))}));
       }
+      else if (target === 'lt1') s.bounds.ltX1 = valX;
+      else if (target === 'lt2') s.bounds.ltX2 = valX;
+      else if (target === 'o1') s.bounds.oY1 = valY;
+      else if (target === 'o2') s.bounds.oY2 = valY;
+      else if (target === 'p1') s.bounds.pY1 = valY;
+      else if (target === 'p2') s.bounds.pY2 = valY;
+
       return { ...ex, state: s };
     })
   }))
@@ -404,6 +413,8 @@ function View2D({ ex }: { ex: Exercise }) {
   };
 
   const drawScene = (ctx: any) => {
+    const b = ex.state.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+
     let dynLabels: {text: string, x: number, y: number, font: string}[] = [];
     const queueLabel = (text: string, x: number, y: number, font = "bold 15px Arial") => { dynLabels.push({text, x, y, font}); };
 
@@ -465,20 +476,20 @@ function View2D({ ex }: { ex: Exercise }) {
     };
 
     ctx.strokeStyle = "black"; ctx.lineWidth = 2.2;
-    ctx.beginPath(); ctx.moveTo(0, ltY); ctx.lineTo(W, ltY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(b.ltX1, ltY); ctx.lineTo(b.ltX2, ltY); ctx.stroke();
     ctx.lineWidth = 1.2; ctx.beginPath(); 
-    ctx.moveTo(10, ltY + 6); ctx.lineTo(25, ltY + 6); 
-    ctx.moveTo(W - 25, ltY + 6); ctx.lineTo(W - 10, ltY + 6); ctx.stroke();
+    ctx.moveTo(b.ltX1 + 10, ltY + 6); ctx.lineTo(b.ltX1 + 25, ltY + 6); 
+    ctx.moveTo(b.ltX2 - 25, ltY + 6); ctx.lineTo(b.ltX2 - 10, ltY + 6); ctx.stroke();
 
     if (reqRegla) {
-      ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(originX, 0); ctx.lineTo(originX, H);
+      ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(originX, b.oY1); ctx.lineTo(originX, b.oY2);
       for(let v = -70; v <= 70; v += 10) {
         let tick = 8; ctx.moveTo(originX + v*SF, ltY - tick); ctx.lineTo(originX + v*SF, ltY + tick);
         if(v !== 0) drawHaloText(ctx, v.toString(), originX + v*SF, ltY + 22, "11px Arial", "center");
         ctx.moveTo(originX - tick, ltY - v*SF); ctx.lineTo(originX + tick, ltY - v*SF);
         if(v !== 0) drawHaloText(ctx, v.toString(), originX - 10, ltY - v*SF + 4, "11px Arial", "right");
       }
-      ctx.stroke(); drawHaloText(ctx, "X", W - 20, ltY + 4, "bold 14px Arial");
+      ctx.stroke(); drawHaloText(ctx, "X", b.ltX2 - 20, ltY + 4, "bold 14px Arial");
     }
     
     if (reqOrigin) {
@@ -488,21 +499,21 @@ function View2D({ ex }: { ex: Exercise }) {
 
     if (reqPP) {
       ctx.lineWidth = 1.8; ctx.setLineDash([10, 4, 2, 4]);
-      ctx.beginPath(); ctx.moveTo(ppX, 0); ctx.lineTo(ppX, H); ctx.stroke(); ctx.setLineDash([]);
-      drawHaloText(ctx, "PP", ppX + 6, 30, "bold 16px Arial");
+      ctx.beginPath(); ctx.moveTo(ppX, b.pY1); ctx.lineTo(ppX, b.pY2); ctx.stroke(); ctx.setLineDash([]);
+      drawHaloText(ctx, "PP", ppX + 6, b.pY1 + 30, "bold 16px Arial");
     }
 
     planes.forEach((pl: ExPlane) => {
       ctx.strokeStyle = "black"; ctx.lineWidth = 2.2;
       if (pl.type === 'horizontal') {
-        ctx.beginPath(); ctx.moveTo(0, pl.p2.y); ctx.lineTo(W, pl.p2.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
         queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - 10, "bold 16px Arial");
       } else if (pl.type === 'frontal') {
-        ctx.beginPath(); ctx.moveTo(0, pl.p1.y); ctx.lineTo(W, pl.p1.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke();
         queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + 20, "bold 16px Arial");
       } else if (pl.type === 'paralelo_lt') {
-        ctx.beginPath(); ctx.moveTo(0, pl.p2.y); ctx.lineTo(W, pl.p2.y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(0, pl.p1.y); ctx.lineTo(W, pl.p1.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke();
         queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - 10, "bold 16px Arial");
         queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + 20, "bold 16px Arial");
       } else {
@@ -583,6 +594,8 @@ function View2D({ ex }: { ex: Exercise }) {
     });
   };
 
+  const b = ex.state.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+
   return (
     <div ref={containerRef} style={{width: '100%', height: '100%', overflow: 'hidden'}}>
       <Stage width={dim.w} height={dim.h} 
@@ -602,8 +615,25 @@ function View2D({ ex }: { ex: Exercise }) {
         <Layer scaleX={scale} scaleY={scale} x={offsetX} y={offsetY}>
           <Shape sceneFunc={drawScene} />
           
+          <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : undefined} strokeWidth={selectedId === "sys_lt1" ? 3 : 0} />
+          <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : undefined} strokeWidth={selectedId === "sys_lt2" ? 3 : 0} />
+
           {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={18} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_origin"} stroke={selectedId === "sys_origin" ? "#fff" : undefined} strokeWidth={selectedId === "sys_origin" ? 3 : 0} />}
-          {reqPP && <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={12} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : undefined} strokeWidth={selectedId === "sys_pp" ? 3 : 0} />}
+          
+          {reqRegla && (
+            <React.Fragment>
+              <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o1"} stroke={selectedId === "sys_o1" ? "#fff" : undefined} strokeWidth={selectedId === "sys_o1" ? 3 : 0} />
+              <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o2"} stroke={selectedId === "sys_o2" ? "#fff" : undefined} strokeWidth={selectedId === "sys_o2" ? 3 : 0} />
+            </React.Fragment>
+          )}
+
+          {reqPP && (
+            <React.Fragment>
+              <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={12} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : undefined} strokeWidth={selectedId === "sys_pp" ? 3 : 0} />
+              <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p1"} stroke={selectedId === "sys_p1" ? "#fff" : undefined} strokeWidth={selectedId === "sys_p1" ? 3 : 0} />
+              <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p2"} stroke={selectedId === "sys_p2" ? "#fff" : undefined} strokeWidth={selectedId === "sys_p2" ? 3 : 0} />
+            </React.Fragment>
+          )}
 
           {planes.map(pl => {
             if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 0} />;
@@ -634,7 +664,7 @@ function View2D({ ex }: { ex: Exercise }) {
         <div style={{position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1e1e2f', border: '1px solid #00d2ff', borderRadius: '5px', padding: '5px', zIndex: 9999, boxShadow: '0 4px 6px rgba(0,0,0,0.3)', width: 'max-content'}}>
           <div style={{fontSize: '0.75em', color: '#00d2ff', padding: '2px 5px', borderBottom: '1px solid #444', marginBottom: '5px'}}>Editar (Aislar Nodo):</div>
           {contextMenu.items.map((it, i) => {
-            const isSys = it.id === 'sys_origin' || it.id === 'sys_pp';
+            const isSys = it.id.startsWith('sys_');
             return (
             <div key={i} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
               <div style={{flex: 1, padding: '5px 8px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.85em'}}
@@ -814,7 +844,7 @@ export default function App() {
                   </div>
                 )}
 
-                {pageExs.map((ex, index) => (
+                {pageExs.map((ex) => (
                   <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }} onMouseUp={(e) => { const tgt = e.target as HTMLElement; if (tgt.classList.contains('exercise-box')) updateBoxSize(ex.id, tgt.style.width, tgt.style.height); }}>
                     <div style={{ position:'absolute', top: 5, right: 35, zIndex: 10, display: 'flex', gap: '5px' }}>
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
@@ -822,7 +852,7 @@ export default function App() {
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
                     </div>
                     <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'25px', height:'25px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center' }}>X</button>
-                    <div className="exercise-title" contentEditable><b>{index + 1}.</b> {ex.title}</div>
+                    <div className="exercise-title" contentEditable><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
                     {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
                     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                       <View2D ex={ex} />
