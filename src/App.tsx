@@ -44,11 +44,21 @@ function applyQuad(val: number, quad: string, isZ: boolean) {
   return val;
 }
 
+// Recuperar autoguardado inicial
+const savedData = localStorage.getItem('diedrico_autosave');
+const initialExercises = savedData ? JSON.parse(savedData) : [];
+
 export const useStore = create<CadStore>()((set, get) => ({
-  exercises: [],
+  exercises: initialExercises,
   
-  saveData: () => { localStorage.setItem('diedrico_pro_data', JSON.stringify(get().exercises)); alert("Lámina guardada."); },
-  loadData: () => { const d = localStorage.getItem('diedrico_pro_data'); if (d) set({ exercises: JSON.parse(d) }); else alert("No hay datos guardados."); },
+  saveData: () => { 
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(get().exercises));
+    const a = document.createElement('a');
+    a.href = dataStr;
+    a.download = `lamina_diedrico_${new Date().getTime()}.json`;
+    a.click();
+  },
+  loadData: () => { /* Manejado en el input del UI */ },
 
   addExercise: (opts) => set((state) => {
     const originX = 400; const ltY = 250;
@@ -94,11 +104,11 @@ export const useStore = create<CadStore>()((set, get) => ({
       if (opts.lineMethod === 'coord') {
         dataStr = `A(${ax}, ${ay}, ${az})  |  B(${bx}, ${by}, ${bz})`; title = `Representar proyecciones de la recta ${opts.lineType !== 'cualquiera' ? opts.lineType : ''} definida por A y B.`;
       } else if (opts.lineMethod === 'puntos') {
-        title = `Dada la recta por sus puntos A y B, hallar sus trazas.`; dataStr = "Puntos dibujados.";
+        title = `Dada la recta por sus puntos A y B, hallar sus trazas.`; dataStr = "";
         pts.push({ id:uid(), name:'A', nodes:[{id:uid(), t:'2', x:originX+ax*SF, y:ltY-az*SF, pairId:'n1A'}, {id:'n1A', t:'1', x:originX+ax*SF, y:ltY+ay*SF}] });
         pts.push({ id:uid(), name:'B', nodes:[{id:uid(), t:'2', x:originX+bx*SF, y:ltY-bz*SF, pairId:'n1B'}, {id:'n1B', t:'1', x:originX+bx*SF, y:ltY+by*SF}] });
       } else {
-        title = `Dadas las proyecciones de la recta r, hallar sus trazas.`; dataStr = "Proyecciones dibujadas.";
+        title = `Dadas las proyecciones de la recta r, hallar sus trazas.`; dataStr = "";
         segments.push({ id:uid(), label:'r2', p1:{x:originX+ax*SF, y:ltY-az*SF}, p2:{x:originX+bx*SF, y:ltY-bz*SF} }, { id:uid(), label:'r1', p1:{x:originX+ax*SF, y:ltY+ay*SF}, p2:{x:originX+bx*SF, y:ltY+by*SF} });
       }
     }
@@ -112,7 +122,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       dataStr = `Plano α(${sx}, ${sy}, ${sz})`; title = `Representar trazas del plano ${opts.planeType !== 'cualquiera' ? opts.planeType : ''}.`;
     }
     else if (t === 'intersecciones') {
-      w = "100%"; dataStr = "Elementos editables.";
+      w = "100%"; dataStr = "";
       if (opts.intSub === 'todas') {
         planes.push(genPlane('α', opts.intP1, true, -50), genPlane('β', opts.intP2, false, 50));
         title = `Hallar la recta de intersección de los planos α (${opts.intP1.replace('_',' ')}) y β (${opts.intP2.replace('_',' ')}).`;
@@ -129,7 +139,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     } 
     else if (t === 'paralelismo') {
-      w = "100%"; dataStr = "Trazas, rectas y puntos editables.";
+      w = "100%"; dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -60);
       let px = originX + 40*SF; let pz = ltY - 60; let py = ltY + 50;
       let pto = { id: uid(), name: 'A', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1A'}, {id:'n1A', t:'1', x:px, y:py}] };
@@ -158,7 +168,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'perpendicularidad') {
-      w = "100%"; dataStr = "Elementos editables.";
+      w = "100%"; dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -40);
       let px = originX + 50*SF; let pz = ltY - 60; let py = ltY + 80;
       let ptP = { id: uid(), name: 'P', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1P'}, {id:'n1P', t:'1', x:px, y:py}] };
@@ -176,7 +186,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'pertenencias') {
-      w = "100%"; dataStr = "Elementos editables.";
+      w = "100%"; dataStr = "";
       if (['max_pend', 'max_inc', 'horiz', 'front'].includes(opts.pertSub)) {
           planes.push(genPlane('α', opts.pertPlaneType, true, 0));
           title = `Trazar una recta de tipo ${opts.pertSub.replace('_',' ')} contenida en el plano α (${opts.pertPlaneType.replace('_', ' ')}).`;
@@ -204,7 +214,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'abatimientos') {
-      w = "100%"; dataStr = "Elementos editables.";
+      w = "100%"; dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -60); planes.push(pA);
       let px = originX + 60; let pz = ltY - 60; let py = ltY + 70;
 
@@ -372,6 +382,11 @@ export const useStore = create<CadStore>()((set, get) => ({
     })
   }))
 }));
+
+// Autoguardado silencioso cada vez que la pizarra cambia
+useStore.subscribe((state) => {
+  localStorage.setItem('diedrico_autosave', JSON.stringify(state.exercises));
+});
 
 // ==========================================
 // 2. EL MOTOR DE DIBUJO CAD (KONVA)
@@ -718,7 +733,6 @@ export default function App() {
   const addFreeElement = useStore((state) => state.addFreeElement);
   const updateBoxSize = useStore((state) => state.updateBoxSize);
   const saveData = useStore((state) => state.saveData);
-  const loadData = useStore((state) => state.loadData);
   
   const [type, setType] = useState('punto_coord');
   
@@ -738,9 +752,14 @@ export default function App() {
 
   const paginatedExercises = useMemo(() => {
     let pages: Exercise[][] = []; let currPage: Exercise[] = [];
-    let currH = 0; const MAX_H = 297; 
+    let currH = 0; 
     exercises.forEach(ex => {
-      let hVal = parseInt(ex.h.replace('mm','')) || 115;
+      let hVal = 115;
+      if (ex.h.includes('mm')) hVal = parseFloat(ex.h);
+      else if (ex.h.includes('px')) hVal = parseFloat(ex.h) * 0.264583;
+      else hVal = parseFloat(ex.h) || 115;
+
+      const MAX_H = pages.length === 0 ? 245 : 265; 
       if (currH + hVal > MAX_H && currPage.length > 0) { pages.push(currPage); currPage = []; currH = 0; }
       currPage.push(ex); currH += hVal;
     });
@@ -759,8 +778,8 @@ export default function App() {
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
         .exercise-box { border: 1.5px solid black; display: flex; flex-direction: column; position: relative; min-height: 115mm; margin-left: -1.5px; margin-top: -1.5px; resize: both; overflow: hidden; break-inside: avoid; }
-        .exercise-title { padding: 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.9rem; font-weight: bold; outline: none; }
-        .exercise-data { font-family: monospace; font-size: 0.85em; padding: 5px; text-align: center; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; }
+        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
+        .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
         .btn-mini { background: #2ed573; border: none; padding: 3px 6px; font-size: 0.75rem; font-weight: bold; cursor: pointer; border-radius: 4px; }
         @media print { body { background: white; } .no-print { display: none !important; } .sheet-container { padding: 0; gap: 0; } .a4-sheet { box-shadow: none; margin: 0; padding: 10mm; page-break-after: always; } .exercise-box { resize: none; overflow: hidden; border: 1.5px solid black; } }
       `}</style>
@@ -823,8 +842,21 @@ export default function App() {
           </div>
           
           <div style={{display: 'flex', gap: '5px', marginTop: 'auto'}}>
-            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }}>💾 Guardar</button>
-            <button onClick={loadData} style={{ flex: 1, background: '#1e90ff', padding: '12px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }}>📂 Cargar</button>
+            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Descargar Lámina (.json)">💾 Descargar</button>
+            <label style={{ flex: 1, background: '#1e90ff', padding: '12px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', textAlign: 'center' }} title="Cargar Lámina (.json)">
+              <input type="file" accept=".json" style={{display:'none'}} onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const r = new FileReader();
+                r.onload = (ev) => {
+                  try { useStore.setState({ exercises: JSON.parse(ev.target?.result as string) }); }
+                  catch(err) { alert("Archivo inválido"); }
+                };
+                r.readAsText(file);
+                e.target.value = '';
+              }} />
+              📂 Abrir
+            </label>
           </div>
           <button onClick={() => window.print()} style={{ background: '#00d2ff', padding: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }}>🖨️ Imprimir Lámina</button>
           <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Click derecho</b> en zona de conflicto para aislar qué editar.<br/><b>Doble clic</b> o icono 🗑️ para borrar.</div>
