@@ -843,6 +843,10 @@ export default function App() {
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
         .btn-mini { background: #2ed573; border: none; padding: 3px 6px; font-size: 0.75rem; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        .side-handle-r { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.03); transition: background 0.2s; }
+        .side-handle-r:hover { background: rgba(0, 210, 255, 0.4); }
+        .side-handle-b { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.03); transition: background 0.2s; }
+        .side-handle-b:hover { background: rgba(0, 210, 255, 0.4); }
         @media print { body { background: white; } .no-print { display: none !important; } .sheet-container { padding: 0; gap: 0; } .a4-sheet { box-shadow: none; margin: 0; padding: 10mm; page-break-after: always; } .exercise-box { resize: none; overflow: hidden; border: 1.5px solid black; } }
       `}</style>
       
@@ -944,10 +948,33 @@ export default function App() {
 
                 {pageExs.map((ex) => (
                   <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }}>
+                    
+                    {/* Tiradores manuales invisibles */}
+                    <div className="no-print side-handle-r" onPointerDown={(e) => {
+                        e.preventDefault(); e.stopPropagation();
+                        const startX = e.clientX; 
+                        const startW = ex.w === '100%' ? 100 : 50;
+                        const onMove = (evt: PointerEvent) => {
+                          const dX = evt.clientX - startX;
+                          if (dX > 60 && startW === 50) { useStore.getState().updateBoxSize(ex.id, '100%', ex.h); cleanup(); }
+                          else if (dX < -60 && startW === 100) { useStore.getState().updateBoxSize(ex.id, '50%', ex.h); cleanup(); }
+                        };
+                        const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
+                        window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
+                    }} />
+                    <div className="no-print side-handle-b" onPointerDown={(e) => {
+                        e.preventDefault(); e.stopPropagation();
+                        const startY = e.clientY; 
+                        const startH = parseInt(ex.h) || 115;
+                        const onMove = (evt: PointerEvent) => {
+                          const newH = Math.max(50, startH + (evt.clientY - startY) * 0.264583);
+                          useStore.getState().updateBoxSize(ex.id, ex.w, newH + 'mm');
+                        };
+                        const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
+                        window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
+                    }} />
+
                     <div style={{ position:'absolute', top: 5, right: 35, zIndex: 10, display: 'flex', gap: '5px' }}>
-                      <button className="no-print btn-mini" onClick={() => updateBoxSize(ex.id, ex.w === '50%' ? '100%' : '50%', ex.h)} title="Alternar Ancho (50% - 100%)">↔️</button>
-                      <button className="no-print btn-mini" onClick={() => updateBoxSize(ex.id, ex.w, (parseInt(ex.h)+15)+'mm')} title="Aumentar Alto">↕️+</button>
-                      <button className="no-print btn-mini" onClick={() => updateBoxSize(ex.id, ex.w, (Math.max(50, parseInt(ex.h)-15))+'mm')} title="Reducir Alto">↕️-</button>
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
