@@ -786,62 +786,43 @@ export default function App() {
   const paginatedExercises = useMemo(() => {
     let pages: Exercise[][] = []; 
     let currPage: Exercise[] = [];
-    let col1Y = 0; 
-    let col2Y = 0;
+    let currY = 0; 
+    let currRowH = 0;
+    let currRowW = 0;
     
     exercises.forEach(ex => {
       let hVal = parseInt(ex.h) || 115;
-      let wVal = ex.w === '100%' ? 100 : 50;
+      let wVal = parseFloat(ex.w) || 50;
 
       const MAX_H = pages.length === 0 ? 245 : 265; 
 
-      if (wVal === 100) {
-        let startY = Math.max(col1Y, col2Y);
-        if (startY + hVal > MAX_H && currPage.length > 0) {
-          pages.push(currPage);
-          currPage = [];
-          col1Y = hVal;
-          col2Y = hVal;
+      if (currRowW + wVal <= 101) {
+        let nextRowH = Math.max(currRowH, hVal);
+        if (currY + nextRowH > MAX_H && currPage.length > 0) {
+           pages.push(currPage);
+           currPage = [];
+           currY = 0;
+           currRowW = wVal;
+           currRowH = hVal;
         } else {
-          col1Y = startY + hVal;
-          col2Y = startY + hVal;
+           currRowW += wVal;
+           currRowH = nextRowH;
         }
-        currPage.push(ex);
       } else {
-        if (col1Y <= col2Y) {
-          if (col1Y + hVal > MAX_H && currPage.length > 0) {
-            if (col2Y + hVal <= MAX_H) {
-              col2Y += hVal;
-              currPage.push(ex);
-            } else {
-              pages.push(currPage);
-              currPage = [];
-              col1Y = hVal;
-              col2Y = 0;
-              currPage.push(ex);
-            }
-          } else {
-            col1Y += hVal;
-            currPage.push(ex);
-          }
+        let nextY = currY + currRowH;
+        if (nextY + hVal > MAX_H && currPage.length > 0) {
+           pages.push(currPage);
+           currPage = [];
+           currY = 0;
+           currRowW = wVal;
+           currRowH = hVal;
         } else {
-          if (col2Y + hVal > MAX_H && currPage.length > 0) {
-            if (col1Y + hVal <= MAX_H) {
-              col1Y += hVal;
-              currPage.push(ex);
-            } else {
-              pages.push(currPage);
-              currPage = [];
-              col1Y = hVal;
-              col2Y = 0;
-              currPage.push(ex);
-            }
-          } else {
-            col2Y += hVal;
-            currPage.push(ex);
-          }
+           currY = nextY;
+           currRowW = wVal;
+           currRowH = hVal;
         }
       }
+      currPage.push(ex);
     });
     if (currPage.length > 0) pages.push(currPage);
     if (pages.length === 0) pages = [[]];
@@ -857,7 +838,7 @@ export default function App() {
         .cajetin { width: 100%; border: 1.5px solid black; margin-bottom: 0; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
-        .exercise-box { float: left; border: 1.5px solid black; display: flex; flex-direction: column; position: relative; margin-left: -1.5px; margin-top: -1.5px; break-inside: avoid; }
+        .exercise-box { float: left; border: 1.5px solid black; display: flex; flex-direction: column; position: relative; margin-left: -1.5px; margin-top: -1.5px; break-inside: avoid; box-sizing: border-box; }
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
         .btn-mini { background: #2ed573; border: none; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; cursor: pointer; border-radius: 4px; }
@@ -973,17 +954,21 @@ export default function App() {
                 )}
 
                 {pageExs.map((ex) => (
-                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h, clear: ex.w === '100%' ? 'both' : 'none' }}>
+                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }}>
                     
-                    {/* Tiradores manuales invisibles adaptados para escritorio y móviles */}
+                    {/* Tiradores manuales libres */}
                     <div className="no-print side-handle-r" onPointerDown={(e) => {
                         e.preventDefault(); e.stopPropagation();
                         const startX = e.clientX; 
-                        const startW = ex.w === '100%' ? 100 : 50;
+                        const startW = parseFloat(ex.w) || 50;
+                        const parentNode = (e.target as HTMLElement).closest('.a4-sheet');
+                        const parentW = parentNode ? parentNode.clientWidth - 114 : 680;
+                        
                         const onMove = (evt: PointerEvent) => {
                           const dX = evt.clientX - startX;
-                          if (dX > 50 && startW === 50) { useStore.getState().updateBoxSize(ex.id, '100%', ex.h); cleanup(); }
-                          else if (dX < -50 && startW === 100) { useStore.getState().updateBoxSize(ex.id, '50%', ex.h); cleanup(); }
+                          const deltaPct = (dX / parentW) * 100;
+                          const newW = Math.min(100, Math.max(20, startW + deltaPct));
+                          useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
                         };
                         const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
                         window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
