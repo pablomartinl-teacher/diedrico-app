@@ -133,7 +133,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       if (opts.planeType === 'frontal') { sx = '∞'; sz = '∞'; } if (opts.planeType === 'paralelo_lt') { sx = '∞'; }
       
       dataStr = `Plano α(${sx}, ${sy}, ${sz})`; 
-      title = "Dibujar proyecciones de las trazas. Indicar cuadrantes del plano y tipo de plano.";
+      title = "Dibujar proraciones de las trazas. Indicar cuadrantes del plano y tipo de plano.";
     }
     else if (t === 'intersecciones') {
       w = "100%"; dataStr = "";
@@ -662,47 +662,47 @@ function View2D({ ex }: { ex: Exercise }) {
         <Layer scaleX={scale} scaleY={scale} x={offsetX} y={offsetY}>
           <Shape sceneFunc={drawScene} />
           
-          <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : undefined} strokeWidth={selectedId === "sys_lt1" ? 3 : 0} />
-          <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : undefined} strokeWidth={selectedId === "sys_lt2" ? 3 : 0} />
+          <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt1" ? 3 : 25} />
+          <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt2" ? 3 : 25} />
 
-          {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={18} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_origin"} stroke={selectedId === "sys_origin" ? "#fff" : undefined} strokeWidth={selectedId === "sys_origin" ? 3 : 0} />}
+          {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={18} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_origin"} stroke={selectedId === "sys_origin" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_origin" ? 3 : 25} />}
           
           {reqRegla && (
             <React.Fragment>
-              <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o1"} stroke={selectedId === "sys_o1" ? "#fff" : undefined} strokeWidth={selectedId === "sys_o1" ? 3 : 0} />
-              <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o2"} stroke={selectedId === "sys_o2" ? "#fff" : undefined} strokeWidth={selectedId === "sys_o2" ? 3 : 0} />
+              <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o1"} stroke={selectedId === "sys_o1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o1" ? 3 : 25} />
+              <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o2"} stroke={selectedId === "sys_o2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o2" ? 3 : 25} />
             </React.Fragment>
           )}
 
           {reqPP && (
             <React.Fragment>
-              <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={12} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : undefined} strokeWidth={selectedId === "sys_pp" ? 3 : 0} />
-              <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p1"} stroke={selectedId === "sys_p1" ? "#fff" : undefined} strokeWidth={selectedId === "sys_p1" ? 3 : 0} />
-              <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p2"} stroke={selectedId === "sys_p2" ? "#fff" : undefined} strokeWidth={selectedId === "sys_p2" ? 3 : 0} />
+              <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={12} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_pp" ? 3 : 25} />
+              <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p1"} stroke={selectedId === "sys_p1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p1" ? 3 : 25} />
+              <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p2"} stroke={selectedId === "sys_p2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p2" ? 3 : 25} />
             </React.Fragment>
           )}
 
           {planes.map(pl => {
-            if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 0} />;
-            if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 0} />;
-            if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 0} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 0} /></React.Fragment>;
+            if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 25} />;
+            if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 25} />;
+            if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 25} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 25} /></React.Fragment>;
             return (
               <React.Fragment key={pl.id}>
-                <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={15} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl_${pl.id}`} stroke={selectedId === `pl_${pl.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pl_${pl.id}` ? 3 : 0} />
-                <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 0} />
-                <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 0} />
+                <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={15} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl_${pl.id}`} stroke={selectedId === `pl_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl_${pl.id}` ? 3 : 25} />
+                <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 25} />
+                <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 25} />
               </React.Fragment>
             );
           })}
 
           {segments.map(seg => (
             <React.Fragment key={seg.id}>
-              {!seg.isDashed && <><Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={10} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg1_${seg.id}`} stroke={selectedId === `seg1_${seg.id}` ? "#fff" : undefined} strokeWidth={selectedId === `seg1_${seg.id}` ? 3 : 0} />
-              <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={10} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg2_${seg.id}`} stroke={selectedId === `seg2_${seg.id}` ? "#fff" : undefined} strokeWidth={selectedId === `seg2_${seg.id}` ? 3 : 0} /></>}
+              {!seg.isDashed && <><Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={10} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg1_${seg.id}`} stroke={selectedId === `seg1_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg1_${seg.id}` ? 3 : 25} />
+              <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={10} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg2_${seg.id}`} stroke={selectedId === `seg2_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg2_${seg.id}` ? 3 : 25} /></>}
             </React.Fragment>
           ))}
           {pts.map(p => p.nodes.map(n => (
-            <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={12} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'punto', p.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pt_${n.id}`} stroke={selectedId === `pt_${n.id}` ? "#fff" : undefined} strokeWidth={selectedId === `pt_${n.id}` ? 3 : 0} />
+            <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={12} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'punto', p.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pt_${n.id}`} stroke={selectedId === `pt_${n.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pt_${n.id}` ? 3 : 25} />
           )))}
         </Layer>
       </Stage>
@@ -714,14 +714,14 @@ function View2D({ ex }: { ex: Exercise }) {
             const isSys = it.id.startsWith('sys_');
             return (
             <div key={i} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
-              <div style={{flex: 1, padding: '5px 8px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.85em'}}
+              <div style={{flex: 1, padding: '10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.85em'}}
                    onMouseEnter={e => e.currentTarget.style.background = '#00d2ff'}
                    onMouseLeave={e => e.currentTarget.style.background = '#363654'}
                    onClick={() => { setSelectedId(it.id); setContextMenu(null); }}>
                   ✎ {it.label}
               </div>
               {!isSys && (
-                <div style={{padding: '5px 8px', cursor: 'pointer', color: 'white', background: '#ff4757', borderRadius: '3px', fontSize: '0.85em'}}
+                <div style={{padding: '10px', cursor: 'pointer', color: 'white', background: '#ff4757', borderRadius: '3px', fontSize: '0.85em'}}
                      onMouseEnter={e => e.currentTarget.style.background = '#ff6b81'}
                      onMouseLeave={e => e.currentTarget.style.background = '#ff4757'}
                      onClick={() => {
@@ -740,7 +740,7 @@ function View2D({ ex }: { ex: Exercise }) {
           )})}
           
           {contextMenu.items.some(it => it.id?.startsWith('pl')) && (
-             <div style={{padding: '5px 8px', cursor: 'pointer', color: 'black', background: '#eccc68', marginTop: '5px', borderRadius: '3px', fontSize: '0.8em', fontWeight: 'bold'}}
+             <div style={{padding: '10px', cursor: 'pointer', color: 'black', background: '#eccc68', marginTop: '5px', borderRadius: '3px', fontSize: '0.8em', fontWeight: 'bold'}}
                   onClick={() => {
                       const planeIdStr = contextMenu.items.find(it => it.id?.startsWith('pl'))!.id;
                       const planeId = planeIdStr.split('_')[1];
@@ -842,78 +842,86 @@ export default function App() {
         .exercise-box { border: 1.5px solid black; display: flex; flex-direction: column; position: relative; min-height: 115mm; margin-left: -1.5px; margin-top: -1.5px; break-inside: avoid; }
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
-        .btn-mini { background: #2ed573; border: none; padding: 3px 6px; font-size: 0.75rem; font-weight: bold; cursor: pointer; border-radius: 4px; }
-        .side-handle-r { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.03); transition: background 0.2s; }
-        .side-handle-r:hover { background: rgba(0, 210, 255, 0.4); }
-        .side-handle-b { position: absolute; left: 0; right: 0; bottom: 0; height: 6px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.03); transition: background 0.2s; }
-        .side-handle-b:hover { background: rgba(0, 210, 255, 0.4); }
+        .btn-mini { background: #2ed573; border: none; padding: 8px 12px; font-size: 0.85rem; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        .side-handle-r { position: absolute; right: -5px; top: 0; bottom: 0; width: 25px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.03); transition: background 0.2s; touch-action: none; }
+        .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
+        .side-handle-b { position: absolute; left: 0; right: 0; bottom: -5px; height: 25px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.03); transition: background 0.2s; touch-action: none; }
+        .side-handle-b:hover, .side-handle-b:active { background: rgba(0, 210, 255, 0.4); }
+        
+        @media (max-width: 768px) {
+          .app-layout { flex-direction: column !important; }
+          .sidebar { width: 100% !important; height: 45vh !important; max-height: 45vh !important; flex: none !important; box-shadow: 0 4px 15px rgba(0,0,0,0.6) !important; }
+          .main-area { width: 100% !important; flex: 1 1 auto !important; height: 55vh !important; }
+          .sheet-container { padding: 10px !important; }
+          .a4-sheet { padding: 5mm; }
+        }
         @media print { body { background: white; } .no-print { display: none !important; } .sheet-container { padding: 0; gap: 0; } .a4-sheet { box-shadow: none; margin: 0; padding: 10mm; page-break-after: always; } .exercise-box { resize: none; overflow: hidden; border: 1.5px solid black; } }
       `}</style>
       
-      <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        <div className="no-print" style={{ width: '360px', background: '#2a2a40', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', overflowY: 'auto', zIndex: 100, boxShadow: '2px 0 10px rgba(0,0,0,0.5)' }}>
+      <div className="app-layout" style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+        <div className="sidebar no-print" style={{ width: '360px', background: '#2a2a40', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', overflowY: 'auto', zIndex: 100, boxShadow: '2px 0 10px rgba(0,0,0,0.5)' }}>
           <h2 style={{ color: '#00d2ff', margin: 0 }}>Editor Diédrico CAD</h2>
           
           <div style={{ background: '#1e1e2f', padding: '15px', borderRadius: '8px' }}>
             <label style={{ color: '#00d2ff', fontWeight: 'bold' }}>Tipo de Ejercicio:</label>
-            <select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', fontWeight: 'bold' }}>
+            <select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: '12px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', fontWeight: 'bold', fontSize: '16px' }}>
               <option value="punto_coord">1. Puntos</option><option value="rectas">2. Rectas</option><option value="plano_coord">3. Planos (Coordenadas)</option>
               <option value="intersecciones">4. Intersecciones</option><option value="paralelismo">5. Paralelismo</option>
               <option value="perpendicularidad">6. Perpendicularidad</option><option value="pertenencias">7. Pertenencias / Contenidas</option>
               <option value="abatimientos">8. Abatimientos</option>
             </select>
 
-            {type === 'punto_coord' && (<div style={{marginTop: '10px'}}><label>Nº Puntos:</label><input type="number" value={ptCount} onChange={e=>setPtCount(Number(e.target.value))} min="1" max="10" style={{width:'100%', padding:'8px'}} /></div>)}
+            {type === 'punto_coord' && (<div style={{marginTop: '10px'}}><label>Nº Puntos:</label><input type="number" value={ptCount} onChange={e=>setPtCount(Number(e.target.value))} min="1" max="10" style={{width:'100%', padding:'12px', fontSize:'16px'}} /></div>)}
             {type === 'rectas' && (
               <div style={{marginTop: '10px'}}>
-                <label>Método de la Recta:</label><select value={lineMethod} onChange={e=>setLineMethod(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="coord">Por Coordenadas</option><option value="puntos">Por Puntos Dibujados</option><option value="proy">Por Proyecciones</option></select>
-                <label>Tipo de Recta:</label><select value={lineType} onChange={e=>setLineType(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="cualquiera">Aleatoria</option><option value="horizontal">Horizontal</option><option value="frontal">Frontal</option><option value="vertical">Vertical</option><option value="punta">Punta</option><option value="perfil">Perfil</option><option value="paralela_lt">Paralela LT</option><option value="incidente_lt">Incidente LT</option><option value="contenida_pv">Contenida PV</option><option value="contenida_ph">Contenida PH</option></select>
+                <label>Método de la Recta:</label><select value={lineMethod} onChange={e=>setLineMethod(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="coord">Por Coordenadas</option><option value="puntos">Por Puntos Dibujados</option><option value="proy">Por Proyecciones</option></select>
+                <label>Tipo de Recta:</label><select value={lineType} onChange={e=>setLineType(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="cualquiera">Aleatoria</option><option value="horizontal">Horizontal</option><option value="frontal">Frontal</option><option value="vertical">Vertical</option><option value="punta">Punta</option><option value="perfil">Perfil</option><option value="paralela_lt">Paralela LT</option><option value="incidente_lt">Incidente LT</option><option value="contenida_pv">Contenida PV</option><option value="contenida_ph">Contenida PH</option></select>
               </div>
             )}
-            {type === 'plano_coord' && (<div style={{marginTop: '10px'}}><label>Tipo de Plano:</label><select value={planeType} onChange={e=>setPlaneType(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="oblicuo">Oblicuo</option><option value="proy_vert">Proy. Vertical</option><option value="proy_horiz">Proy. Horizontal</option><option value="perfil">Perfil</option><option value="horizontal">Horizontal</option><option value="frontal">Frontal</option><option value="paralelo_lt">Paralelo a LT</option></select></div>)}
+            {type === 'plano_coord' && (<div style={{marginTop: '10px'}}><label>Tipo de Plano:</label><select value={planeType} onChange={e=>setPlaneType(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="oblicuo">Oblicuo</option><option value="proy_vert">Proy. Vertical</option><option value="proy_horiz">Proy. Horizontal</option><option value="perfil">Perfil</option><option value="horizontal">Horizontal</option><option value="frontal">Frontal</option><option value="paralelo_lt">Paralelo a LT</option></select></div>)}
             {(type === 'rectas' || type === 'plano_coord') && (
               <div style={{marginTop: '10px'}}>
-                <label>Cuadrante 1:</label><select value={quadA} onChange={e=>setQuadA(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="any">Aleatorio</option><option value="1">I Cuadrante</option><option value="2">II Cuadrante</option><option value="3">III Cuadrante</option><option value="4">IV Cuadrante</option></select>
-                {type !== 'plano_coord' && <><label>Cuadrante 2:</label><select value={quadB} onChange={e=>setQuadB(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="any">Aleatorio</option><option value="1">I Cuadrante</option><option value="2">II Cuadrante</option><option value="3">III Cuadrante</option><option value="4">IV Cuadrante</option></select></>}
+                <label>Cuadrante 1:</label><select value={quadA} onChange={e=>setQuadA(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="any">Aleatorio</option><option value="1">I Cuadrante</option><option value="2">II Cuadrante</option><option value="3">III Cuadrante</option><option value="4">IV Cuadrante</option></select>
+                {type !== 'plano_coord' && <><label>Cuadrante 2:</label><select value={quadB} onChange={e=>setQuadB(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="any">Aleatorio</option><option value="1">I Cuadrante</option><option value="2">II Cuadrante</option><option value="3">III Cuadrante</option><option value="4">IV Cuadrante</option></select></>}
               </div>
             )}
             {type === 'intersecciones' && (
               <div style={{marginTop: '10px'}}>
-                <label>Caso:</label><select value={intSub} onChange={e=>setIntSub(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="todas">Todas las trazas cortan</option><option value="paralelas">Trazas paralelas</option><option value="no_existe">Traza no existe</option><option value="paralelas_lt">Todas paralelas a LT</option></select>
-                <label>Plano 1:</label><select value={intP1} onChange={e=>setIntP1(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="oblicuo">Oblicuo</option><option value="proy_vert">Proy. Vertical</option><option value="proy_horiz">Proy. Horizontal</option><option value="perfil">Perfil</option><option value="horizontal">Horizontal</option><option value="frontal">Frontal</option><option value="paralelo_lt">Paralelo LT</option></select>
-                <label>Plano 2:</label><select value={intP2} onChange={e=>setIntP2(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="oblicuo">Oblicuo</option><option value="proy_vert">Proy. Vertical</option><option value="proy_horiz">Proy. Horizontal</option><option value="perfil">Perfil</option><option value="horizontal">Horizontal</option><option value="frontal">Frontal</option><option value="paralelo_lt">Paralelo LT</option></select>
+                <label>Caso:</label><select value={intSub} onChange={e=>setIntSub(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="todas">Todas las trazas cortan</option><option value="paralelas">Trazas paralelas</option><option value="no_existe">Traza no existe</option><option value="paralelas_lt">Todas paralelas a LT</option></select>
+                <label>Plano 1:</label><select value={intP1} onChange={e=>setIntP1(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="oblicuo">Oblicuo</option><option value="proy_vert">Proy. Vertical</option><option value="proy_horiz">Proy. Horizontal</option><option value="perfil">Perfil</option><option value="horizontal">Horizontal</option><option value="frontal">Frontal</option><option value="paralelo_lt">Paralelo LT</option></select>
+                <label>Plano 2:</label><select value={intP2} onChange={e=>setIntP2(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="oblicuo">Oblicuo</option><option value="proy_vert">Proy. Vertical</option><option value="proy_horiz">Proy. Horizontal</option><option value="perfil">Perfil</option><option value="horizontal">Horizontal</option><option value="frontal">Frontal</option><option value="paralelo_lt">Paralelo LT</option></select>
               </div>
             )}
-            {type === 'paralelismo' && (<div style={{marginTop: '10px'}}><label>Caso:</label><select value={paraSub} onChange={e=>setParaSub(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="r_r_pto">Recta // Recta por pto</option><option value="p_p_pto">Plano // Plano por pto</option><option value="r_p_pto_corte">Recta // Plano (corta a r)</option><option value="p_r_pto">Plano // Recta por pto</option><option value="p_r_cont_r">Plano // Recta (contiene s)</option><option value="p_2r_cortan">Plano // a 2 rectas que cortan</option></select></div>)}
-            {type === 'perpendicularidad' && (<div style={{marginTop: '10px'}}><label>Caso:</label><select value={perpSub} onChange={e=>setPerpSub(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="r_p_pto">Recta ⊥ Plano por pto</option><option value="p_r_pto">Plano ⊥ Recta por pto</option><option value="p_p_pto">Plano ⊥ Plano por pto</option><option value="p_p_r">Plano ⊥ Plano por recta</option><option value="r_r_ext">Recta ⊥ Recta por pto ext</option><option value="r_r">Recta ⊥ Recta</option></select></div>)}
+            {type === 'paralelismo' && (<div style={{marginTop: '10px'}}><label>Caso:</label><select value={paraSub} onChange={e=>setParaSub(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="r_r_pto">Recta // Recta por pto</option><option value="p_p_pto">Plano // Plano por pto</option><option value="r_p_pto_corte">Recta // Plano (corta a r)</option><option value="p_r_pto">Plano // Recta por pto</option><option value="p_r_cont_r">Plano // Recta (contiene s)</option><option value="p_2r_cortan">Plano // a 2 rectas que cortan</option></select></div>)}
+            {type === 'perpendicularidad' && (<div style={{marginTop: '10px'}}><label>Caso:</label><select value={perpSub} onChange={e=>setPerpSub(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="r_p_pto">Recta ⊥ Plano por pto</option><option value="p_r_pto">Plano ⊥ Recta por pto</option><option value="p_p_pto">Plano ⊥ Plano por pto</option><option value="p_p_r">Plano ⊥ Plano por recta</option><option value="r_r_ext">Recta ⊥ Recta por pto ext</option><option value="r_r">Recta ⊥ Recta</option></select></div>)}
             {type === 'pertenencias' && (
               <div style={{marginTop: '10px'}}>
-                <label>Caso:</label><select value={pertSub} onChange={e=>setPertSub(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="max_pend">Recta Máxima Pendiente</option><option value="max_inc">Recta Máxima Inclinación</option><option value="horiz">Recta Horizontal contenida</option><option value="front">Recta Frontal contenida</option><option value="def_2r_c">Plano: 2 rectas se cortan</option><option value="def_2r_p">Plano: 2 rectas paralelas</option><option value="def_3p">Plano: 3 puntos</option><option value="def_r_p">Plano: recta y punto</option></select>
-                <label>Tipo de Plano (Contenedor):</label><select value={pertPlaneType} onChange={e=>setPertPlaneType(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="oblicuo">Oblicuo</option><option value="proy_vert">Proyectante Vertical</option><option value="proy_horiz">Proyectante Horizontal</option></select>
+                <label>Caso:</label><select value={pertSub} onChange={e=>setPertSub(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="max_pend">Recta Máxima Pendiente</option><option value="max_inc">Recta Máxima Inclinación</option><option value="horiz">Recta Horizontal contenida</option><option value="front">Recta Frontal contenida</option><option value="def_2r_c">Plano: 2 rectas se cortan</option><option value="def_2r_p">Plano: 2 rectas paralelas</option><option value="def_3p">Plano: 3 puntos</option><option value="def_r_p">Plano: recta y punto</option></select>
+                <label>Tipo de Plano (Contenedor):</label><select value={pertPlaneType} onChange={e=>setPertPlaneType(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="oblicuo">Oblicuo</option><option value="proy_vert">Proyectante Vertical</option><option value="proy_horiz">Proyectante Horizontal</option></select>
               </div>
             )}
             {type === 'abatimientos' && (
               <div style={{marginTop: '10px'}}>
-                <label>Elemento:</label><select value={abatElem} onChange={e=>setAbatElem(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="punto">Punto</option><option value="recta">Recta</option><option value="fig_reg">Figura Regular</option><option value="fig_irreg">Figura Irregular</option></select>
-                <label>Estado Dado:</label><select value={abatEstado} onChange={e=>setAbatEstado(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="proy">Proyecciones (Encontrar V.M)</option><option value="vm">Verdadera Magnitud (Desabatir)</option></select>
-                <label>Sobre Plano:</label><select value={abatPlano} onChange={e=>setAbatPlano(e.target.value)} style={{width:'100%', padding:'8px'}}><option value="ph">PH</option><option value="pv">PV</option></select>
+                <label>Elemento:</label><select value={abatElem} onChange={e=>setAbatElem(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="punto">Punto</option><option value="recta">Recta</option><option value="fig_reg">Figura Regular</option><option value="fig_irreg">Figura Irregular</option></select>
+                <label>Estado Dado:</label><select value={abatEstado} onChange={e=>setAbatEstado(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="proy">Proyecciones (Encontrar V.M)</option><option value="vm">Verdadera Magnitud (Desabatir)</option></select>
+                <label>Sobre Plano:</label><select value={abatPlano} onChange={e=>setAbatPlano(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="ph">PH</option><option value="pv">PV</option></select>
               </div>
             )}
             <div style={{marginTop: '15px'}}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#363654', padding: '8px', borderRadius: '5px', cursor: 'pointer', marginBottom: '5px' }}><input type="checkbox" checked={reqOrigin} onChange={e=>setReqOrigin(e.target.checked)} /> <span style={{fontSize:'0.8em', color:'#eccc68'}}>Mostrar Origen (0)</span></label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#363654', padding: '8px', borderRadius: '5px', cursor: 'pointer', marginBottom: '5px' }}><input type="checkbox" checked={reqPP} onChange={e=>setReqPP(e.target.checked)} /> <span style={{fontSize:'0.8em', color:'#eccc68'}}>3ª Proyección (PP)</span></label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#363654', padding: '8px', borderRadius: '5px', cursor: 'pointer' }}><input type="checkbox" checked={reqRegla} onChange={e=>setReqRegla(e.target.checked)} /> <span style={{fontSize:'0.8em', color:'#eccc68'}}>Mostrar Regla</span></label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#363654', padding: '12px', borderRadius: '5px', cursor: 'pointer', marginBottom: '5px' }}><input type="checkbox" checked={reqOrigin} onChange={e=>setReqOrigin(e.target.checked)} style={{transform:'scale(1.2)'}} /> <span style={{fontSize:'0.9em', color:'#eccc68'}}>Mostrar Origen (0)</span></label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#363654', padding: '12px', borderRadius: '5px', cursor: 'pointer', marginBottom: '5px' }}><input type="checkbox" checked={reqPP} onChange={e=>setReqPP(e.target.checked)} style={{transform:'scale(1.2)'}} /> <span style={{fontSize:'0.9em', color:'#eccc68'}}>3ª Proyección (PP)</span></label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#363654', padding: '12px', borderRadius: '5px', cursor: 'pointer' }}><input type="checkbox" checked={reqRegla} onChange={e=>setReqRegla(e.target.checked)} style={{transform:'scale(1.2)'}} /> <span style={{fontSize:'0.9em', color:'#eccc68'}}>Mostrar Regla</span></label>
             </div>
-            <button onClick={handleAdd} style={{ width: '100%', marginTop: '15px', padding: '10px', background: '#2ed573', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }}>+ Añadir Ejercicio</button>
+            <button onClick={handleAdd} style={{ width: '100%', marginTop: '15px', padding: '15px', background: '#2ed573', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', fontSize:'16px' }}>+ Añadir Ejercicio</button>
           </div>
           
           <div style={{display: 'flex', gap: '5px', marginTop: 'auto'}}>
-            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Guardar Lámina Localmente">💾 Guardar (Local)</button>
-            <button onClick={loadData} style={{ flex: 1, background: '#1e90ff', padding: '8px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Cargar Lámina Guardada">📂 Cargar (Local)</button>
+            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '10px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Guardar Lámina Localmente">💾 Guardar (Local)</button>
+            <button onClick={loadData} style={{ flex: 1, background: '#1e90ff', padding: '10px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Cargar Lámina Guardada">📂 Cargar (Local)</button>
           </div>
           <div style={{display: 'flex', gap: '5px', marginTop: '5px'}}>
-            <button onClick={useStore.getState().downloadData} style={{ flex: 1, background: '#2ed573', padding: '8px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Descargar Lámina (.json)">⬇️ Descargar (.json)</button>
-            <label style={{ flex: 1, background: '#3742fa', padding: '8px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', textAlign: 'center' }} title="Abrir Lámina (.json)">
+            <button onClick={useStore.getState().downloadData} style={{ flex: 1, background: '#2ed573', padding: '10px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Descargar Lámina (.json)">⬇️ Descargar (.json)</button>
+            <label style={{ flex: 1, background: '#3742fa', padding: '10px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', textAlign: 'center' }} title="Abrir Lámina (.json)">
               <input type="file" accept=".json" style={{display:'none'}} onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
@@ -928,11 +936,11 @@ export default function App() {
               📁 Abrir (.json)
             </label>
           </div>
-          <button onClick={() => window.print()} style={{ background: '#00d2ff', padding: '12px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', marginTop: '5px' }}>🖨️ Imprimir Lámina</button>
-          <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Click derecho</b> en zona de conflicto para aislar qué editar.<br/><b>Doble clic</b> o icono 🗑️ para borrar.</div>
+          <button onClick={() => window.print()} style={{ background: '#00d2ff', padding: '15px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', marginTop: '5px', fontSize:'16px' }}>🖨️ Imprimir Lámina</button>
+          <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Click derecho (o mantener calcado)</b> en zona de conflicto para aislar qué editar.</div>
         </div>
 
-        <div style={{ flex: 1, background: '#151520', overflowY: 'auto' }}>
+        <div className="main-area" style={{ flex: 1, background: '#151520', overflowY: 'auto' }}>
           <div className="sheet-container">
             {paginatedExercises.map((pageExs, pageIdx) => (
               <div key={pageIdx} className="a4-sheet">
@@ -949,15 +957,15 @@ export default function App() {
                 {pageExs.map((ex) => (
                   <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }}>
                     
-                    {/* Tiradores manuales invisibles */}
+                    {/* Tiradores manuales invisibles para móviles y PC */}
                     <div className="no-print side-handle-r" onPointerDown={(e) => {
                         e.preventDefault(); e.stopPropagation();
                         const startX = e.clientX; 
                         const startW = ex.w === '100%' ? 100 : 50;
                         const onMove = (evt: PointerEvent) => {
                           const dX = evt.clientX - startX;
-                          if (dX > 60 && startW === 50) { useStore.getState().updateBoxSize(ex.id, '100%', ex.h); cleanup(); }
-                          else if (dX < -60 && startW === 100) { useStore.getState().updateBoxSize(ex.id, '50%', ex.h); cleanup(); }
+                          if (dX > 50 && startW === 50) { useStore.getState().updateBoxSize(ex.id, '100%', ex.h); cleanup(); }
+                          else if (dX < -50 && startW === 100) { useStore.getState().updateBoxSize(ex.id, '50%', ex.h); cleanup(); }
                         };
                         const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
                         window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
@@ -979,7 +987,7 @@ export default function App() {
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
                       <button className="no-print btn-mini" onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
                     </div>
-                    <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'25px', height:'25px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center' }} title="Borrar Ejercicio">X</button>
+                    <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'30px', height:'30px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'16px' }} title="Borrar Ejercicio">X</button>
                     <div className="exercise-title" contentEditable><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
                     {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
                     <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
