@@ -233,15 +233,16 @@ export const useStore = create<CadStore>()((set, get) => ({
       w = "100%"; dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -60); planes.push(pA);
       let px = originX + 60; let pz = ltY - 60; let py = ltY + 70;
+      let planoNombre = opts.abatPlano === 'ph' ? 'Horizontal' : 'Vertical';
 
       if (opts.abatEstado === 'proy') {
           if (opts.abatElem === 'punto') {
               pts.push({ id:uid(), name: 'A', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1'}, {id:'n1', t:'1', x:px, y:py}] });
-              title = `Abatir el punto A (en α) sobre ${opts.abatPlano.toUpperCase()}.`;
+              title = `Dadas las proyecciones del punto A, hallar su verdadera magnitud abatiendo sobre el plano ${planoNombre}.`;
           } else if (opts.abatElem === 'recta') {
               segments.push({ id:uid(), label:'r2', p1:{x:px-40, y:pz+20}, p2:{x:px+60, y:pz-30} });
               segments.push({ id:uid(), label:'r1', p1:{x:px-40, y:py-20}, p2:{x:px+60, y:py+40} });
-              title = `Abatir la recta r (en α) sobre ${opts.abatPlano.toUpperCase()}.`;
+              title = `Dadas las proyecciones de la recta r, hallar su verdadera magnitud abatiendo sobre el plano ${planoNombre}.`;
           } else {
               let pLen = opts.abatElem === 'fig_reg' ? 3 : 4;
               let figPts: any[] = [];
@@ -256,20 +257,19 @@ export const useStore = create<CadStore>()((set, get) => ({
                   segments.push({ id:uid(), label:'', p1:{x:figPts[i].nodes[0].x, y:figPts[i].nodes[0].y}, p2:{x:figPts[next].nodes[0].x, y:figPts[next].nodes[0].y} });
                   segments.push({ id:uid(), label:'', p1:{x:figPts[i].nodes[1].x, y:figPts[i].nodes[1].y}, p2:{x:figPts[next].nodes[1].x, y:figPts[next].nodes[1].y} });
               }
-              title = `Abatir figura en α para hallar V.M. sobre ${opts.abatPlano.toUpperCase()}.`;
+              title = `Dadas las proyecciones de la figura contenida en el plano α, hallar su verdadera magnitud abatiendo sobre el plano ${planoNombre}.`;
           }
       } else {
-          // Estado: Verdadera Magnitud (Desabatir)
           let abatedTraceLabel = opts.abatPlano === 'ph' ? '(α2)' : '(α1)';
           let abatedY = opts.abatPlano === 'ph' ? ltY + 120 : ltY - 120;
           segments.push({ id:uid(), label: abatedTraceLabel, p1: {x: pA.vX, y: ltY}, p2: {x: pA.vX + 150, y: abatedY} });
 
           if (opts.abatElem === 'punto') {
               pts.push({ id:uid(), name: '(A)', nodes: [{id:uid(), t:'', x:px, y: opts.abatPlano==='ph'?py:pz}] });
-              title = `Dado (A) abatido en ${opts.abatPlano.toUpperCase()}, hallar sus proyecciones en α.`;
+              title = `Dado el punto A abatido sobre el plano ${planoNombre}, hallar sus proyecciones en α.`;
           } else if (opts.abatElem === 'recta') {
               segments.push({ id:uid(), label:'(r)', p1:{x:px-40, y:opts.abatPlano==='ph'?py-20:pz+20}, p2:{x:px+60, y:opts.abatPlano==='ph'?py+40:pz-30} });
-              title = `Dada (r) abatida en ${opts.abatPlano.toUpperCase()}, hallar sus proyecciones en α.`;
+              title = `Dada la recta r abatida sobre el plano ${planoNombre}, hallar sus proyecciones en α.`;
           } else {
               let pLen = opts.abatElem === 'fig_reg' ? 3 : 4;
               let figPts: any[] = [];
@@ -283,7 +283,7 @@ export const useStore = create<CadStore>()((set, get) => ({
                   let next = (i+1)%pLen;
                   segments.push({ id:uid(), label:'', p1:{x:figPts[i].nodes[0].x, y:figPts[i].nodes[0].y}, p2:{x:figPts[next].nodes[0].x, y:figPts[next].nodes[0].y} });
               }
-              title = `Dada figura abatida en ${opts.abatPlano.toUpperCase()}, hallar proyecciones en α.`;
+              title = `Dada la figura abatida sobre el plano ${planoNombre}, hallar sus proyecciones en α.`;
           }
       }
     }
@@ -923,13 +923,13 @@ export default function App() {
       <style>{`
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e2f; color: #fff; }
         .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; }
-        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 10mm; color: black; display: flow-root; box-sizing: border-box; break-inside: avoid; border: 2px solid black; margin-bottom: 20px; }
+        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 0; color: black; display: flow-root; box-sizing: border-box; break-inside: avoid; border: 2px solid black; margin-bottom: 20px; overflow: hidden; }
         .cajetin { width: 100%; border-bottom: 2px solid black; margin-bottom: 0; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
-        .exercise-box { float: left; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1px solid #000; border-bottom: 1px solid #000; }
-        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
-        .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
+        .exercise-box { float: left; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border: 1px solid #000; margin-left: -1px; margin-top: -1px; }
+        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
+        .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
         .side-handle-r { position: absolute; right: -12px; top: 0; bottom: 0; width: 25px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
@@ -941,14 +941,13 @@ export default function App() {
           .sidebar { width: 100% !important; height: 45vh !important; max-height: 45vh !important; flex: none !important; box-shadow: 0 4px 15px rgba(0,0,0,0.6) !important; }
           .main-area { width: 100% !important; flex: 1 1 auto !important; height: 55vh !important; }
           .sheet-container { padding: 10px !important; }
-          .a4-sheet { padding: 5mm; }
         }
         @media print { 
           body, html { background: white; height: auto !important; overflow: visible !important; } 
           .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
           .no-print { display: none !important; } 
           .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; } 
-          .a4-sheet { box-shadow: none; margin: 0; padding: 10mm; page-break-after: always; display: flow-root; } 
+          .a4-sheet { box-shadow: none; margin: 0; padding: 0; page-break-after: always; display: flow-root; border: 2px solid black; } 
         }
       `}</style>
       
@@ -1031,7 +1030,7 @@ export default function App() {
             </label>
           </div>
           <button onClick={handlePrint} style={{ background: '#00d2ff', padding: '15px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', marginTop: '5px', fontSize:'16px' }}>🖨️ Imprimir Lámina</button>
-          <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Toque doble</b> o mantén presionado para borrar un elemento.</div>
+          <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Toque doble</b> o mantén presionado para editar o borrar.</div>
         </div>
 
         <div className="main-area" style={{ flex: 1, background: '#151520', overflowY: 'auto' }}>
@@ -1059,7 +1058,7 @@ export default function App() {
                         const startX = e.clientX; 
                         const startW = parseFloat(ex.w) || 50;
                         const parentNode = (e.target as HTMLElement).closest('.a4-sheet');
-                        const parentW = parentNode ? parentNode.clientWidth - 114 : 680;
+                        const parentW = parentNode ? parentNode.clientWidth : 680;
                         
                         const onMove = (evt: PointerEvent) => {
                           const dX = evt.clientX - startX;
@@ -1086,7 +1085,7 @@ export default function App() {
                     <div className="exercise-title" contentEditable style={{ paddingRight: '30px' }}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
                     {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
                     
-                    <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
+                    <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1px solid #eaeaea' }}>
                       <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
                       <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
                       <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
