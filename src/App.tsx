@@ -620,7 +620,8 @@ function View2D({ ex }: { ex: Exercise }) {
     pts.forEach((p: any) => {
       p.nodes.forEach((n: ExNode) => { 
         ctx.beginPath(); ctx.strokeStyle = "black"; ctx.lineWidth = 1.5;
-        ctx.moveTo(n.x - 5, n.y - 5); ctx.lineTo(n.x + 5, n.y + 5); ctx.moveTo(n.x - 5, n.y + 5); ctx.lineTo(n.x + 5, n.y - 5); ctx.stroke();
+        // Dibujo de cruz vertical y horizontal
+        ctx.moveTo(n.x, n.y - 5); ctx.lineTo(n.x, n.y + 5); ctx.moveTo(n.x - 5, n.y); ctx.lineTo(n.x + 5, n.y); ctx.stroke();
         if (p.name) queueLabel(`${p.name}${n.t}`, n.x + 8, n.y - 8); 
       });
     });
@@ -923,11 +924,12 @@ export default function App() {
       <style>{`
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e2f; color: #fff; }
         .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; }
-        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 0; color: black; display: flow-root; box-sizing: border-box; break-inside: avoid; border: 2px solid black; margin-bottom: 20px; overflow: hidden; }
-        .cajetin { width: 100%; border-bottom: 2px solid black; margin-bottom: 0; }
+        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 3mm; color: black; display: flow-root; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; overflow: hidden; }
+        .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flow-root; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
+        .cajetin { width: 100%; border-bottom: 2px solid black; margin-bottom: 0; box-sizing: border-box; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
-        .exercise-box { float: left; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border: 1px solid #000; margin-left: -1px; margin-top: -1px; }
+        .exercise-box { float: left; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1px solid #000; border-bottom: 1px solid #000; margin-right: -1px; margin-bottom: -1px; }
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
@@ -947,7 +949,9 @@ export default function App() {
           .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
           .no-print { display: none !important; } 
           .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; } 
-          .a4-sheet { box-shadow: none; margin: 0; padding: 0; page-break-after: always; display: flow-root; border: 2px solid black; } 
+          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flow-root; border: none; width: 210mm; min-height: 297mm; } 
+          .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flow-root; box-sizing: border-box; overflow: hidden; position: relative; }
+          .exercise-box { resize: none; overflow: hidden; border-right: 1px solid #000; border-bottom: 1px solid #000; margin-right: -1px; margin-bottom: -1px; } 
         }
       `}</style>
       
@@ -1037,65 +1041,67 @@ export default function App() {
           <div className="sheet-container">
             {paginatedExercises.map((pageExs, pageIdx) => (
               <div key={pageIdx} className="a4-sheet">
-                {pageIdx === 0 && (
-                  <div className="cajetin">
-                    <div className="cajetin-top">
-                      <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>Colegio Nuestra Señora de los Infantes</span>
-                      <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>1º BACHILLERATO</span>
+                <div className="page-border">
+                  {pageIdx === 0 && (
+                    <div className="cajetin">
+                      <div className="cajetin-top">
+                        <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>Colegio Nuestra Señora de los Infantes</span>
+                        <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>1º BACHILLERATO</span>
+                      </div>
+                      <div className="cajetin-bottom">
+                        <span style={{flex: 1, display:'flex', alignItems:'flex-end', whiteSpace:'nowrap'}}>Nombre: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
+                        <span style={{width: '30%', display:'flex', alignItems:'flex-end', marginLeft:'20px', whiteSpace:'nowrap'}}>Curso: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
+                      </div>
                     </div>
-                    <div className="cajetin-bottom">
-                      <span style={{flex: 1, display:'flex', alignItems:'flex-end', whiteSpace:'nowrap'}}>Nombre: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
-                      <span style={{width: '30%', display:'flex', alignItems:'flex-end', marginLeft:'20px', whiteSpace:'nowrap'}}>Curso: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
-                    </div>
-                  </div>
-                )}
+                  )}
 
-                {pageExs.map((ex) => (
-                  <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h, clear: ex.w === '100%' ? 'both' : 'none' }}>
-                    
-                    <div className="no-print side-handle-r" onPointerDown={(e) => {
-                        e.preventDefault(); e.stopPropagation();
-                        const startX = e.clientX; 
-                        const startW = parseFloat(ex.w) || 50;
-                        const parentNode = (e.target as HTMLElement).closest('.a4-sheet');
-                        const parentW = parentNode ? parentNode.clientWidth : 680;
-                        
-                        const onMove = (evt: PointerEvent) => {
-                          const dX = evt.clientX - startX;
-                          const deltaPct = (dX / parentW) * 100;
-                          const newW = Math.min(100, Math.max(20, startW + deltaPct));
-                          useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
-                        };
-                        const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
-                        window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
-                    }} />
-                    <div className="no-print side-handle-b" onPointerDown={(e) => {
-                        e.preventDefault(); e.stopPropagation();
-                        const startY = e.clientY; 
-                        const startH = parseInt(ex.h) || 115;
-                        const onMove = (evt: PointerEvent) => {
-                          const newH = Math.max(50, startH + (evt.clientY - startY) * 0.264583);
-                          useStore.getState().updateBoxSize(ex.id, ex.w, newH + 'mm');
-                        };
-                        const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
-                        window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
-                    }} />
+                  {pageExs.map((ex) => (
+                    <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h, clear: ex.w === '100%' ? 'both' : 'none' }}>
+                      
+                      <div className="no-print side-handle-r" onPointerDown={(e) => {
+                          e.preventDefault(); e.stopPropagation();
+                          const startX = e.clientX; 
+                          const startW = parseFloat(ex.w) || 50;
+                          const parentNode = (e.target as HTMLElement).closest('.page-border');
+                          const parentW = parentNode ? parentNode.clientWidth : 680;
+                          
+                          const onMove = (evt: PointerEvent) => {
+                            const dX = evt.clientX - startX;
+                            const deltaPct = (dX / parentW) * 100;
+                            const newW = Math.min(100, Math.max(20, startW + deltaPct));
+                            useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
+                          };
+                          const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
+                          window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
+                      }} />
+                      <div className="no-print side-handle-b" onPointerDown={(e) => {
+                          e.preventDefault(); e.stopPropagation();
+                          const startY = e.clientY; 
+                          const startH = parseInt(ex.h) || 115;
+                          const onMove = (evt: PointerEvent) => {
+                            const newH = Math.max(50, startH + (evt.clientY - startY) * 0.264583);
+                            useStore.getState().updateBoxSize(ex.id, ex.w, newH + 'mm');
+                          };
+                          const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
+                          window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
+                      }} />
 
-                    <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
-                    <div className="exercise-title" contentEditable style={{ paddingRight: '30px' }}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
-                    {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
-                    
-                    <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1px solid #eaeaea' }}>
-                      <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
-                      <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
-                      <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
-                    </div>
+                      <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
+                      <div className="exercise-title" contentEditable style={{ paddingRight: '30px' }}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
+                      {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
+                      
+                      <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1px solid #eaeaea' }}>
+                        <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
+                        <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
+                        <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
+                      </div>
 
-                    <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-                      <View2D ex={ex} />
+                      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                        <View2D ex={ex} />
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             ))}
           </div>
