@@ -260,6 +260,7 @@ export const useStore = create<CadStore>()((set, get) => ({
               title = `Dadas las proyecciones de la figura contenida en el plano α, hallar su verdadera magnitud abatiendo sobre el plano ${planoNombre}.`;
           }
       } else {
+          // Estado: Verdadera Magnitud (Desabatir)
           let abatedTraceLabel = opts.abatPlano === 'ph' ? '(α2)' : '(α1)';
           let abatedY = opts.abatPlano === 'ph' ? ltY + 120 : ltY - 120;
           segments.push({ id:uid(), label: abatedTraceLabel, p1: {x: pA.vX, y: ltY}, p2: {x: pA.vX + 150, y: abatedY} });
@@ -620,7 +621,6 @@ function View2D({ ex }: { ex: Exercise }) {
     pts.forEach((p: any) => {
       p.nodes.forEach((n: ExNode) => { 
         ctx.beginPath(); ctx.strokeStyle = "black"; ctx.lineWidth = 1.5;
-        // Dibujo de cruz vertical y horizontal
         ctx.moveTo(n.x, n.y - 5); ctx.lineTo(n.x, n.y + 5); ctx.moveTo(n.x - 5, n.y); ctx.lineTo(n.x + 5, n.y); ctx.stroke();
         if (p.name) queueLabel(`${p.name}${n.t}`, n.x + 8, n.y - 8); 
       });
@@ -924,14 +924,14 @@ export default function App() {
       <style>{`
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e2f; color: #fff; }
         .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; }
-        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 3mm; color: black; display: flow-root; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; overflow: hidden; }
-        .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flow-root; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
-        .cajetin { width: 100%; border-bottom: 2px solid black; margin-bottom: 0; box-sizing: border-box; }
+        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; }
+        .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flex; flex-wrap: wrap; align-content: flex-start; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
+        .cajetin { width: 100%; border-bottom: 2px solid black; margin-bottom: 0; box-sizing: border-box; flex-shrink: 0; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
-        .exercise-box { float: left; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1px solid #000; border-bottom: 1px solid #000; margin-right: -1px; margin-bottom: -1px; }
-        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
-        .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
+        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin-right: -1.5px; margin-bottom: -1.5px; }
+        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
+        .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
         .side-handle-r { position: absolute; right: -12px; top: 0; bottom: 0; width: 25px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
@@ -949,9 +949,9 @@ export default function App() {
           .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
           .no-print { display: none !important; } 
           .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; } 
-          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flow-root; border: none; width: 210mm; min-height: 297mm; } 
-          .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flow-root; box-sizing: border-box; overflow: hidden; position: relative; }
-          .exercise-box { resize: none; overflow: hidden; border-right: 1px solid #000; border-bottom: 1px solid #000; margin-right: -1px; margin-bottom: -1px; } 
+          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: block; border: none; width: 210mm; min-height: 297mm; } 
+          .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flex; flex-wrap: wrap; align-content: flex-start; box-sizing: border-box; overflow: hidden; position: relative; }
+          .exercise-box { flex-grow: 1; resize: none; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin-right: -1.5px; margin-bottom: -1.5px; } 
         }
       `}</style>
       
@@ -1056,7 +1056,7 @@ export default function App() {
                   )}
 
                   {pageExs.map((ex) => (
-                    <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h, clear: ex.w === '100%' ? 'both' : 'none' }}>
+                    <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }}>
                       
                       <div className="no-print side-handle-r" onPointerDown={(e) => {
                           e.preventDefault(); e.stopPropagation();
