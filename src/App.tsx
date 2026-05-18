@@ -621,7 +621,10 @@ function View2D({ ex }: { ex: Exercise }) {
     pts.forEach((p: any) => {
       p.nodes.forEach((n: ExNode) => { 
         ctx.beginPath(); ctx.strokeStyle = "black"; ctx.lineWidth = 1.5;
-        ctx.moveTo(n.x, n.y - 5); ctx.lineTo(n.x, n.y + 5); ctx.moveTo(n.x - 5, n.y); ctx.lineTo(n.x + 5, n.y); ctx.stroke();
+        // Cruz en los puntos perfectamente horizontal y vertical (➕)
+        ctx.moveTo(n.x, n.y - 5); ctx.lineTo(n.x, n.y + 5); 
+        ctx.moveTo(n.x - 5, n.y); ctx.lineTo(n.x + 5, n.y); 
+        ctx.stroke();
         if (p.name) queueLabel(`${p.name}${n.t}`, n.x + 8, n.y - 8); 
       });
     });
@@ -857,8 +860,9 @@ export default function App() {
   const paginatedExercises = useMemo(() => {
     let pages: Exercise[][] = []; 
     let currPage: Exercise[] = [];
-    let col1Y = 0; 
-    let col2Y = 0;
+    let currY = 0; 
+    let rowH = 0;
+    let rowW = 0;
     
     exercises.forEach(ex => {
       let hVal = parseInt(ex.h) || 115;
@@ -866,53 +870,23 @@ export default function App() {
 
       const MAX_H = pages.length === 0 ? 245 : 265; 
 
-      if (wVal > 55) {
-        let startY = Math.max(col1Y, col2Y);
-        if (startY + hVal > MAX_H && currPage.length > 0) {
-          pages.push(currPage);
-          currPage = [];
-          col1Y = hVal;
-          col2Y = hVal;
-        } else {
-          col1Y = startY + hVal;
-          col2Y = startY + hVal;
-        }
-        currPage.push(ex);
+      if (rowW + wVal <= 105) { 
+        rowW += wVal;
+        rowH = Math.max(rowH, hVal);
       } else {
-        if (col1Y <= col2Y) {
-          if (col1Y + hVal > MAX_H && currPage.length > 0) {
-            if (col2Y + hVal <= MAX_H) {
-              col2Y += hVal;
-              currPage.push(ex);
-            } else {
-              pages.push(currPage);
-              currPage = [];
-              col1Y = hVal;
-              col2Y = 0;
-              currPage.push(ex);
-            }
-          } else {
-            col1Y += hVal;
-            currPage.push(ex);
-          }
-        } else {
-          if (col2Y + hVal > MAX_H && currPage.length > 0) {
-            if (col1Y + hVal <= MAX_H) {
-              col1Y += hVal;
-              currPage.push(ex);
-            } else {
-              pages.push(currPage);
-              currPage = [];
-              col1Y = hVal;
-              col2Y = 0;
-              currPage.push(ex);
-            }
-          } else {
-            col2Y += hVal;
-            currPage.push(ex);
-          }
-        }
+        currY += rowH;
+        rowW = wVal;
+        rowH = hVal;
       }
+
+      if (currY + rowH > MAX_H && currPage.length > 0) {
+        pages.push(currPage);
+        currPage = [];
+        currY = 0;
+        rowW = wVal;
+        rowH = hVal;
+      }
+      currPage.push(ex);
     });
     if (currPage.length > 0) pages.push(currPage);
     if (pages.length === 0) pages = [[]];
@@ -926,16 +900,16 @@ export default function App() {
         .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; }
         .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; }
         .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flex; flex-wrap: wrap; align-content: flex-start; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
-        .cajetin { width: 100%; border-bottom: 2px solid black; margin-bottom: 0; box-sizing: border-box; flex-shrink: 0; }
+        .cajetin { width: 100%; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
-        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin-right: -1.5px; margin-bottom: -1.5px; }
-        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.1; }
-        .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.1; }
+        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; margin-right: -1.5px; margin-bottom: -1.5px; overflow: hidden; background: white; }
+        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.2; word-wrap: break-word; }
+        .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.2; word-wrap: break-word; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
-        .side-handle-r { position: absolute; right: -12px; top: 0; bottom: 0; width: 25px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
+        .side-handle-r { position: absolute; right: 0; top: 0; bottom: 0; width: 15px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
-        .side-handle-b { position: absolute; left: 0; right: 0; bottom: -12px; height: 25px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
+        .side-handle-b { position: absolute; left: 0; right: 0; bottom: 0; height: 15px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-b:hover, .side-handle-b:active { background: rgba(0, 210, 255, 0.4); }
         
         @media (max-width: 768px) {
@@ -951,7 +925,7 @@ export default function App() {
           .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; } 
           .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: block; border: none; width: 210mm; min-height: 297mm; } 
           .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flex; flex-wrap: wrap; align-content: flex-start; box-sizing: border-box; overflow: hidden; position: relative; }
-          .exercise-box { flex-grow: 1; resize: none; border-right: 1.5px solid #000; border-bottom: 1.5px solid #000; margin-right: -1.5px; margin-bottom: -1.5px; } 
+          .exercise-box { flex-grow: 1; resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; margin-right: -1.5px; margin-bottom: -1.5px; } 
         }
       `}</style>
       
