@@ -870,7 +870,7 @@ export default function App() {
 
       const MAX_H = pages.length === 0 ? 245 : 265; 
 
-      if (rowW + wVal <= 105) { 
+      if (rowW + wVal <= 101) { 
         rowW += wVal;
         rowH = Math.max(rowH, hVal);
       } else {
@@ -898,15 +898,20 @@ export default function App() {
       <style>{`
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e2f; color: #fff; }
         .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; }
-        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; }
-        .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flex; flex-wrap: wrap; align-content: flex-start; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
+        .a4-sheet { background: white; width: 210mm; height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; display: flex; flex-direction: column; overflow: hidden; }
+        
+        .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
         .cajetin { width: 100%; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
-        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; margin-right: -1.5px; margin-bottom: -1.5px; overflow: hidden; background: white; }
+        
+        .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: stretch; align-items: stretch; width: 100%; }
+        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
+        
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.2; word-wrap: break-word; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.2; word-wrap: break-word; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
+        
         .side-handle-r { position: absolute; right: 0; top: 0; bottom: 0; width: 15px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
         .side-handle-b { position: absolute; left: 0; right: 0; bottom: 0; height: 15px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
@@ -923,14 +928,15 @@ export default function App() {
           .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
           .no-print { display: none !important; } 
           .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; } 
-          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: block; border: none; width: 210mm; min-height: 297mm; } 
-          .page-border { border: 2px solid black; min-height: calc(297mm - 6mm); display: flex; flex-wrap: wrap; align-content: flex-start; box-sizing: border-box; overflow: hidden; position: relative; }
-          .exercise-box { flex-grow: 1; resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; margin-right: -1.5px; margin-bottom: -1.5px; } 
+          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: 210mm; height: 297mm; } 
+          .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; }
+          .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: stretch; align-items: stretch; width: 100%; }
+          .exercise-box { flex-grow: 1; resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
         }
       `}</style>
       
       <div className="app-layout" style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        <div className="sidebar no-print" style={{ width: '360px', background: '#2a2a40', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', overflowY: 'auto', zIndex: 100, boxShadow: '2px 0 10px rgba(0,0,0,0.5)' }}>
+        <div className="sidebar no-print" style={{ width: '360px', background: '#2a2a40', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', overflow: 'auto', zIndex: 100, boxShadow: '2px 0 10px rgba(0,0,0,0.5)' }}>
           <h2 style={{ color: '#00d2ff', margin: 0 }}>Editor Diédrico CAD</h2>
           
           <div style={{ background: '#1e1e2f', padding: '15px', borderRadius: '8px' }}>
@@ -1029,52 +1035,68 @@ export default function App() {
                     </div>
                   )}
 
-                  {pageExs.map((ex) => (
-                    <div key={ex.id} className="exercise-box" style={{ width: ex.w, height: ex.h }}>
-                      
-                      <div className="no-print side-handle-r" onPointerDown={(e) => {
-                          e.preventDefault(); e.stopPropagation();
-                          const startX = e.clientX; 
-                          const startW = parseFloat(ex.w) || 50;
-                          const parentNode = (e.target as HTMLElement).closest('.page-border');
-                          const parentW = parentNode ? parentNode.clientWidth : 680;
-                          
-                          const onMove = (evt: PointerEvent) => {
-                            const dX = evt.clientX - startX;
-                            const deltaPct = (dX / parentW) * 100;
-                            const newW = Math.min(100, Math.max(20, startW + deltaPct));
-                            useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
-                          };
-                          const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
-                          window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
-                      }} />
-                      <div className="no-print side-handle-b" onPointerDown={(e) => {
-                          e.preventDefault(); e.stopPropagation();
-                          const startY = e.clientY; 
-                          const startH = parseInt(ex.h) || 115;
-                          const onMove = (evt: PointerEvent) => {
-                            const newH = Math.max(50, startH + (evt.clientY - startY) * 0.264583);
-                            useStore.getState().updateBoxSize(ex.id, ex.w, newH + 'mm');
-                          };
-                          const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
-                          window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
-                      }} />
+                  <div className="exercises-grid">
+                    {pageExs.map((ex) => (
+                      <div key={ex.id} className="exercise-box" style={{ width: ex.w, minHeight: ex.h }}>
+                        
+                        <div className="no-print side-handle-r" onPointerDown={(e) => {
+                            e.preventDefault(); e.stopPropagation();
+                            const startX = e.clientX; 
+                            const startW = parseFloat(ex.w) || 50;
+                            const parentNode = (e.target as HTMLElement).closest('.exercises-grid');
+                            const parentW = parentNode ? parentNode.clientWidth : 680;
+                            
+                            const exIndex = pageExs.findIndex(item => item.id === ex.id);
+                            const nextEx = pageExs[exIndex + 1];
+                            const nextStartW = nextEx ? parseFloat(nextEx.w) : 0;
+                            const isSameRow = nextEx && (startW + nextStartW > 80) && (startW + nextStartW <= 105);
+                            
+                            const onMove = (evt: PointerEvent) => {
+                              const dX = evt.clientX - startX;
+                              const deltaPct = (dX / parentW) * 100;
+                              
+                              if (isSameRow) {
+                                const maxW = startW + nextStartW - 20;
+                                const newW = Math.max(20, Math.min(maxW, startW + deltaPct));
+                                const newNextW = startW + nextStartW - newW;
+                                useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
+                                useStore.getState().updateBoxSize(nextEx.id, newNextW + '%', nextEx.h);
+                              } else {
+                                const newW = Math.min(100, Math.max(20, startW + deltaPct));
+                                useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
+                              }
+                            };
+                            const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
+                            window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
+                        }} />
+                        <div className="no-print side-handle-b" onPointerDown={(e) => {
+                            e.preventDefault(); e.stopPropagation();
+                            const startY = e.clientY; 
+                            const startH = parseInt(ex.h) || 115;
+                            const onMove = (evt: PointerEvent) => {
+                              const newH = Math.max(50, startH + (evt.clientY - startY) * 0.264583);
+                              useStore.getState().updateBoxSize(ex.id, ex.w, newH + 'mm');
+                            };
+                            const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
+                            window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
+                        }} />
 
-                      <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
-                      <div className="exercise-title" contentEditable style={{ paddingRight: '30px' }}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
-                      {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
-                      
-                      <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1px solid #eaeaea' }}>
-                        <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
-                        <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
-                        <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
-                      </div>
+                        <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
+                        <div className="exercise-title" contentEditable style={{ paddingRight: '30px' }}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
+                        {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
+                        
+                        <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
+                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
+                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
+                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
+                        </div>
 
-                      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-                        <View2D ex={ex} />
+                        <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+                          <View2D ex={ex} />
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
             ))}
