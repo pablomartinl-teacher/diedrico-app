@@ -1,5 +1,6 @@
 {
   "name": "diedrico-app",
+  "homepage": "https://pablomartinl-teacher.github.io/diedrico-app",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -8,6 +9,8 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
+    "predeploy": "npm run build",    
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
