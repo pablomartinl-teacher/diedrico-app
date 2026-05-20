@@ -95,7 +95,6 @@ export const useStore = create<CadStore>()((set, get) => ({
     };
 
     if (t === 'punto_coord') {
-      w = "100%"; 
       title = "Dibujar las proyecciones de los puntos. Indicar sus cuadrantes, si están sobre pv o ph, o si están sobre un bisector.";
       let dArr = [];
       for(let i=0; i<opts.ptCount; i++) {
@@ -140,7 +139,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       title = "Dibujar proyecciones de las trazas. Indicar cuadrantes del plano y tipo de plano.";
     }
     else if (t === 'intersecciones') {
-      w = "100%"; dataStr = "";
+      dataStr = "";
       title = "Hallar la recta de intersección de los planos.";
       if (opts.intSub === 'todas') {
         planes.push(genPlane('α', opts.intP1, true, -50), genPlane('β', opts.intP2, false, 50));
@@ -155,7 +154,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     } 
     else if (t === 'paralelismo') {
-      w = "100%"; dataStr = "";
+      dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -60);
       let px = originX + 40*SF; let pz = ltY - 60; let py = ltY + 50;
       let pto = { id: uid(), name: 'A', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1A'}, {id:'n1A', t:'1', x:px, y:py}] };
@@ -184,7 +183,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'perpendicularidad') {
-      w = "100%"; dataStr = "";
+      dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -40);
       let px = originX + 50*SF; let pz = ltY - 60; let py = ltY + 80;
       let ptP = { id: uid(), name: 'P', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1P'}, {id:'n1P', t:'1', x:px, y:py}] };
@@ -202,7 +201,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'pertenencias') {
-      w = "100%"; dataStr = "";
+      dataStr = "";
       if (['max_pend', 'max_inc', 'horiz', 'front'].includes(opts.pertSub)) {
           planes.push(genPlane('α', opts.pertPlaneType, true, 0));
           title = `Trazar una recta de tipo ${opts.pertSub.replace('_',' ')} contenida en el plano α (${opts.pertPlaneType.replace('_', ' ')}).`;
@@ -230,7 +229,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'abatimientos') {
-      w = "100%"; dataStr = "";
+      dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -60); planes.push(pA);
       let px = originX + 60; let pz = ltY - 60; let py = ltY + 70;
       let planoNombre = opts.abatPlano === 'ph' ? 'Horizontal' : 'Vertical';
@@ -897,8 +896,15 @@ export default function App() {
     <>
       <style>{`
         body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e2f; color: #fff; }
-        .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; }
-        .a4-sheet { background: white; width: 210mm; height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; display: flex; flex-direction: column; overflow: hidden; }
+        .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; transform-origin: top center; }
+        
+        @media screen and (min-width: 769px) and (max-height: 1300px) { .sheet-container { zoom: 0.9; } }
+        @media screen and (min-width: 769px) and (max-height: 1100px) { .sheet-container { zoom: 0.8; } }
+        @media screen and (min-width: 769px) and (max-height: 950px) { .sheet-container { zoom: 0.75; } }
+        @media screen and (min-width: 769px) and (max-height: 850px) { .sheet-container { zoom: 0.65; } }
+        @media screen and (min-width: 769px) and (max-height: 750px) { .sheet-container { zoom: 0.55; } }
+        
+        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; display: flex; flex-direction: column; overflow: hidden; }
         
         .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
         .cajetin { width: 100%; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; }
@@ -906,7 +912,7 @@ export default function App() {
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
         
         .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: stretch; align-items: stretch; width: 100%; }
-        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
+        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; margin-right: -1.5px; margin-bottom: -1.5px; background: white; overflow: hidden; }
         
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.2; word-wrap: break-word; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.2; word-wrap: break-word; }
@@ -921,22 +927,22 @@ export default function App() {
           .app-layout { flex-direction: column !important; }
           .sidebar { width: 100% !important; height: 45vh !important; max-height: 45vh !important; flex: none !important; box-shadow: 0 4px 15px rgba(0,0,0,0.6) !important; }
           .main-area { width: 100% !important; flex: 1 1 auto !important; height: 55vh !important; }
-          .sheet-container { padding: 10px !important; }
+          .sheet-container { padding: 10px !important; zoom: 1 !important; }
         }
         @media print { 
           body, html { background: white; height: auto !important; overflow: visible !important; } 
           .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
           .no-print { display: none !important; } 
-          .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; } 
-          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: 210mm; height: 297mm; } 
+          .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; zoom: 1 !important; transform: none !important; } 
+          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: 210mm; min-height: 297mm; } 
           .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; }
           .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: stretch; align-items: stretch; width: 100%; }
-          .exercise-box { flex-grow: 1; resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
+          .exercise-box { flex-grow: 1; resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; margin-right: -1.5px; margin-bottom: -1.5px; } 
         }
       `}</style>
       
       <div className="app-layout" style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-        <div className="sidebar no-print" style={{ width: '360px', background: '#2a2a40', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', overflow: 'auto', zIndex: 100, boxShadow: '2px 0 10px rgba(0,0,0,0.5)' }}>
+        <div className="sidebar no-print" style={{ width: '300px', background: '#2a2a40', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', overflow: 'auto', zIndex: 100, boxShadow: '2px 0 10px rgba(0,0,0,0.5)', flexShrink: 0 }}>
           <h2 style={{ color: '#00d2ff', margin: 0 }}>Editor Diédrico CAD</h2>
           
           <div style={{ background: '#1e1e2f', padding: '15px', borderRadius: '8px' }}>
