@@ -6,8 +6,8 @@ import { Stage, Layer, Shape, Circle, Group } from 'react-konva';
 // 1. EL CEREBRO MATEMÁTICO (ZUSTAND)
 // ==========================================
 export interface ExNode { id: string; t: string; x: number; y: number; pairId?: string; }
-export interface ExPlane { id: string; name: string; type: string; vX: number; p1: {x:number, y:number}; p2: {x:number, y:number}; }
-export interface ExSegment { id: string; label: string; p1: {x:number, y:number}; p2: {x:number, y:number}; isDashed?: boolean; }
+export interface ExPlane { id: string; name: string; type: string; vX: number; p1: {x:number, y:number}; p2: {x:number, y:number}; customStyle?: 'solid' | 'dashed'; }
+export interface ExSegment { id: string; label: string; p1: {x:number, y:number}; p2: {x:number, y:number}; isDashed?: boolean; customStyle?: 'solid' | 'dashed'; }
 export interface Exercise {
   id: string; title: string; type: string; w: string; h: string; dataStr: string;
   state: { ltY: number; originX: number; ppX: number; reqRegla: boolean; reqPP: boolean; reqOrigin: boolean; planes: ExPlane[]; segments: ExSegment[]; pts: {id:string, name:string, nodes:ExNode[]}[]; bounds?: { ltX1: number; ltX2: number; oY1: number; oY2: number; pY1: number; pY2: number; } };
@@ -24,6 +24,7 @@ interface CadStore {
   updatePlane: (exId: string, planeId: string, newVX: number) => void;
   updatePlaneEndpoint: (exId: string, planeId: string, traceNum: 1|2, newX: number, newY: number) => void;
   togglePlaneType: (exId: string, planeId: string) => void;
+  toggleLineStyle: (exId: string, elemType: 'recta' | 'plano', elemId: string) => void;
   updateSegment: (exId: string, segId: string, pointIndex: 1|2, newX: number, newY: number) => void;
   updateSystem: (exId: string, target: string, valX: number, valY: number) => void;
   addFreeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano') => void;
@@ -353,6 +354,21 @@ export const useStore = create<CadStore>()((set, get) => ({
     })
   })),
 
+  toggleLineStyle: (exId, elemType, elemId) => set((state) => ({
+    exercises: state.exercises.map(ex => {
+      if (ex.id !== exId) return ex;
+      let s = { ...ex.state };
+      const nextStyle = (current?: string) => current === 'solid' ? 'dashed' : current === 'dashed' ? undefined : 'solid';
+      
+      if (elemType === 'recta') {
+        s.segments = s.segments.map(seg => seg.id === elemId ? { ...seg, customStyle: nextStyle(seg.customStyle) } : seg);
+      } else if (elemType === 'plano') {
+        s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nextStyle(pl.customStyle) } : pl);
+      }
+      return { ...ex, state: s };
+    })
+  })),
+
   updateNode: (exId, ptId, nodeId, newX, newY) => set((state) => ({
     exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
@@ -486,12 +502,16 @@ function View2D({ ex }: { ex: Exercise }) {
   const offsetX = (dim.w - W * scale) / 2;
   const offsetY = (dim.h - H * scale) / 2;
 
+  // Función matemática para que los tamaños en pantalla NUNCA varíen, sin importar cuánto se comprima la caja
+  const sc = (val: number) => val / scale;
+  const getFont = (size: number, weight = "") => `${weight} ${sc(size)}px Arial`.trim();
+
   const handleHover = (e: any) => { e.target.moveToTop(); e.target.scale({x:1.5, y:1.5}); document.body.style.cursor='pointer'; };
   const handleOut = (e: any) => { e.target.scale({x:1, y:1}); document.body.style.cursor='default'; };
 
-  const drawHaloText = (ctx: any, text: string, x: number, y: number, font = "bold 15px Arial", align = "left") => {
+  const drawHaloText = (ctx: any, text: string, x: number, y: number, font = getFont(15, "bold"), align = "left") => {
     if (!text) return;
-    ctx.save(); ctx.font = font; ctx.strokeStyle = "white"; ctx.lineWidth = 4; ctx.lineJoin = "round"; ctx.textAlign = align;
+    ctx.save(); ctx.font = font; ctx.strokeStyle = "white"; ctx.lineWidth = sc(4); ctx.lineJoin = "round"; ctx.textAlign = align;
     ctx.strokeText(text, x, y); ctx.fillStyle = "black"; ctx.fillText(text, x, y); ctx.restore();
   };
 
@@ -499,12 +519,16 @@ function View2D({ ex }: { ex: Exercise }) {
     const b = ex.state.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
 
     let dynLabels: {text: string, x: number, y: number, font: string}[] = [];
-    const queueLabel = (text: string, x: number, y: number, font = "bold 15px Arial") => { dynLabels.push({text, x, y, font}); };
+    const queueLabel = (text: string, x: number, y: number, font = getFont(15, "bold")) => { dynLabels.push({text, x, y, font}); };
 
     const drawTrueVisibilitySegmentLocal = (seg: ExSegment, stSegments: ExSegment[], ltY: number, isVerticalProj: boolean) => {
-      if (seg.isDashed) {
-         ctx.beginPath(); ctx.setLineDash([5,5]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
+      if (seg.customStyle === 'dashed' || (!seg.customStyle && seg.isDashed)) {
+         ctx.beginPath(); ctx.setLineDash([sc(5), sc(5)]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
          if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2, (seg.p1.y+seg.p2.y)/2); return;
+      }
+      if (seg.customStyle === 'solid') {
+         ctx.beginPath(); ctx.setLineDash([]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke();
+         if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5)); return;
       }
 
       let tVals = [0, 1];
@@ -518,9 +542,9 @@ function View2D({ ex }: { ex: Exercise }) {
 
       if(!otherSeg) {
           let in1st = isVerticalProj ? (seg.p1.y < ltY) : (seg.p1.y > ltY);
-          ctx.beginPath(); ctx.setLineDash(in1st ? [] : [6, 4]);
+          ctx.beginPath(); ctx.setLineDash(in1st ? [] : [sc(6), sc(4)]);
           ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
-          if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + 5, (seg.p1.y+seg.p2.y)/2 - 5); return;
+          if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5)); return;
       }
 
       let dy = seg.p2.y - seg.p1.y;
@@ -551,11 +575,11 @@ function View2D({ ex }: { ex: Exercise }) {
           let y1 = isVerticalProj ? yOtherMid : yMid; let y2 = isVerticalProj ? yMid : yOtherMid;
           let is1stQ = (y2 < ltY) && (y1 > ltY);
 
-          ctx.beginPath(); ctx.setLineDash(is1stQ ? [] : [6, 4]);
+          ctx.beginPath(); ctx.setLineDash(is1stQ ? [] : [sc(6), sc(4)]);
           ctx.moveTo(seg.p1.x + tA * dx, seg.p1.y + tA * dy); ctx.lineTo(seg.p1.x + tB * dx, seg.p1.y + tB * dy); ctx.stroke();
       }
       ctx.setLineDash([]);
-      if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + 5, (seg.p1.y+seg.p2.y)/2 - 5);
+      if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5));
     };
 
     ctx.strokeStyle = "black"; ctx.lineWidth = 2.2;
@@ -567,43 +591,58 @@ function View2D({ ex }: { ex: Exercise }) {
     if (reqRegla) {
       ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(originX, b.oY1); ctx.lineTo(originX, b.oY2);
       for(let v = -70; v <= 70; v += 10) {
-        let tick = 8; ctx.moveTo(originX + v*SF, ltY - tick); ctx.lineTo(originX + v*SF, ltY + tick);
-        if(v !== 0) drawHaloText(ctx, v.toString(), originX + v*SF, ltY + 22, "11px Arial", "center");
+        let tick = sc(8); ctx.moveTo(originX + v*SF, ltY - tick); ctx.lineTo(originX + v*SF, ltY + tick);
+        if(v !== 0) drawHaloText(ctx, v.toString(), originX + v*SF, ltY + sc(22), getFont(11), "center");
         ctx.moveTo(originX - tick, ltY - v*SF); ctx.lineTo(originX + tick, ltY - v*SF);
-        if(v !== 0) drawHaloText(ctx, v.toString(), originX - 10, ltY - v*SF + 4, "11px Arial", "right");
+        if(v !== 0) drawHaloText(ctx, v.toString(), originX - sc(10), ltY - v*SF + sc(4), getFont(11), "right");
       }
-      ctx.stroke(); drawHaloText(ctx, "X", b.ltX2 - 20, ltY + 4, "bold 14px Arial");
+      ctx.stroke(); drawHaloText(ctx, "X", b.ltX2 - sc(20), ltY + sc(4), getFont(14, "bold"));
     }
     
     if (reqOrigin) {
       ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(originX, ltY - 8); ctx.lineTo(originX, ltY + 8); ctx.stroke();
-      if(!reqRegla) drawHaloText(ctx, "0", originX + 4, ltY + 18, "italic 14px Arial");
+      if(!reqRegla) drawHaloText(ctx, "0", originX + sc(4), ltY + sc(18), getFont(14, "italic"));
     }
 
     if (reqPP) {
-      ctx.lineWidth = 1.8; ctx.setLineDash([10, 4, 2, 4]);
+      ctx.lineWidth = 1.8; ctx.setLineDash([sc(10), sc(4), sc(2), sc(4)]);
       ctx.beginPath(); ctx.moveTo(ppX, b.pY1); ctx.lineTo(ppX, b.pY2); ctx.stroke(); ctx.setLineDash([]);
-      drawHaloText(ctx, "PP", ppX + 6, b.pY1 + 30, "bold 16px Arial");
+      drawHaloText(ctx, "PP", ppX + sc(6), b.pY1 + sc(30), getFont(16, "bold"));
     }
 
     planes.forEach((pl: ExPlane) => {
       ctx.strokeStyle = "black"; ctx.lineWidth = 2.2;
+      
+      const applyDash = (isAutoDashed: boolean) => {
+          if (pl.customStyle === 'solid') ctx.setLineDash([]);
+          else if (pl.customStyle === 'dashed') ctx.setLineDash([sc(6), sc(4)]);
+          else ctx.setLineDash(isAutoDashed ? [sc(6), sc(4)] : []);
+      };
+
       if (pl.type === 'horizontal') {
-        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - 10, "bold 16px Arial");
+        applyDash(false);
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke(); ctx.setLineDash([]);
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
       } else if (pl.type === 'frontal') {
-        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke();
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + 20, "bold 16px Arial");
+        applyDash(false);
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
       } else if (pl.type === 'paralelo_lt') {
+        applyDash(false);
         ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke();
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - 10, "bold 16px Arial");
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + 20, "bold 16px Arial");
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
       } else {
-        ctx.beginPath(); ctx.setLineDash(pl.p2.y < ltY ? [] : [6,4]); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
-        ctx.beginPath(); ctx.setLineDash(pl.p1.y > ltY ? [] : [6,4]); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - 10, "bold 16px Arial");
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + 20, "bold 16px Arial");
+        applyDash(pl.p2.y >= ltY);
+        ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
+        
+        applyDash(pl.p1.y <= ltY);
+        ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke(); 
+        
+        ctx.setLineDash([]);
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
       }
     });
 
@@ -612,19 +651,19 @@ function View2D({ ex }: { ex: Exercise }) {
         drawTrueVisibilitySegmentLocal(seg, segments, ltY, isV);
     });
 
-    ctx.strokeStyle = "#888"; ctx.setLineDash([5, 5]); ctx.lineWidth = 1;
+    ctx.strokeStyle = "#888"; ctx.setLineDash([sc(5), sc(5)]); ctx.lineWidth = sc(1);
     pts.forEach((p: any) => { if(p.nodes.length === 2) { ctx.beginPath(); ctx.moveTo(p.nodes[0].x, p.nodes[0].y); ctx.lineTo(p.nodes[1].x, p.nodes[1].y); ctx.stroke(); } });
     ctx.setLineDash([]);
     
     ctx.fillStyle = "black";
     pts.forEach((p: any) => {
       p.nodes.forEach((n: ExNode) => { 
-        ctx.beginPath(); ctx.strokeStyle = "black"; ctx.lineWidth = 1.5;
-        // Cruz en los puntos perfectamente horizontal y vertical (➕)
-        ctx.moveTo(n.x, n.y - 5); ctx.lineTo(n.x, n.y + 5); 
-        ctx.moveTo(n.x - 5, n.y); ctx.lineTo(n.x + 5, n.y); 
+        ctx.beginPath(); ctx.strokeStyle = "black"; ctx.lineWidth = sc(1.5);
+        let cs = sc(5);
+        ctx.moveTo(n.x, n.y - cs); ctx.lineTo(n.x, n.y + cs); 
+        ctx.moveTo(n.x - cs, n.y); ctx.lineTo(n.x + cs, n.y); 
         ctx.stroke();
-        if (p.name) queueLabel(`${p.name}${n.t}`, n.x + 8, n.y - 8); 
+        if (p.name) queueLabel(`${p.name}${n.t}`, n.x + sc(8), n.y - sc(8)); 
       });
     });
 
@@ -637,7 +676,7 @@ function View2D({ ex }: { ex: Exercise }) {
         for(let j=i+1; j<dynLabels.length; j++) {
             if(skip.has(j)) continue;
             let dx = dynLabels[i].x - dynLabels[j].x; let dy = dynLabels[i].y - dynLabels[j].y;
-            if(Math.sqrt(dx*dx + dy*dy) < 15) { group.push(dynLabels[j]); skip.add(j); }
+            if(Math.sqrt(dx*dx + dy*dy) < sc(15)) { group.push(dynLabels[j]); skip.add(j); }
         }
         if(group.length > 1) {
             let combinedText = group.map(g => g.text).join(' ≡ ');
@@ -655,10 +694,10 @@ function View2D({ ex }: { ex: Exercise }) {
                 let a = mergedLabels[i]; let b = mergedLabels[j];
                 ctx.font = a.font; let aW = ctx.measureText(a.text).width;
                 ctx.font = b.font; let bW = ctx.measureText(b.text).width;
-                let aH = 15; let bH = 15;
+                let aH = sc(15); let bH = sc(15);
                 
                 let dx = a.x - b.x; let dy = a.y - b.y;
-                let minDistX = (aW + bW)/2 + 8; let minDistY = (aH + bH)/2 + 8;
+                let minDistX = (aW + bW)/2 + sc(8); let minDistY = (aH + bH)/2 + sc(8);
                 
                 if (Math.abs(dx) < minDistX && Math.abs(dy) < minDistY) {
                     if (dx === 0 && dy === 0) { dx = 0.1; dy = 0.1; }
@@ -702,47 +741,47 @@ function View2D({ ex }: { ex: Exercise }) {
           <Shape sceneFunc={drawScene} />
           
           <Group visible={!isPrinting}>
-            <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt1" ? 3 : 25} />
-            <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt2" ? 3 : 25} />
+            <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt1" ? sc(3) : sc(25)} />
+            <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt2" ? sc(3) : sc(25)} />
 
-            {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={18} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_origin"} stroke={selectedId === "sys_origin" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_origin" ? 3 : 25} />}
+            {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={sc(18)} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_origin"} stroke={selectedId === "sys_origin" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_origin" ? sc(3) : sc(25)} />}
             
             {reqRegla && (
               <React.Fragment>
-                <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o1"} stroke={selectedId === "sys_o1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o1" ? 3 : 25} />
-                <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o2"} stroke={selectedId === "sys_o2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o2" ? 3 : 25} />
+                <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o1"} stroke={selectedId === "sys_o1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o1" ? sc(3) : sc(25)} />
+                <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o2"} stroke={selectedId === "sys_o2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o2" ? sc(3) : sc(25)} />
               </React.Fragment>
             )}
 
             {reqPP && (
               <React.Fragment>
-                <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={12} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_pp" ? 3 : 25} />
-                <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p1"} stroke={selectedId === "sys_p1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p1" ? 3 : 25} />
-                <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={8} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p2"} stroke={selectedId === "sys_p2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p2" ? 3 : 25} />
+                <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={sc(12)} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_pp" ? sc(3) : sc(25)} />
+                <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p1"} stroke={selectedId === "sys_p1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p1" ? sc(3) : sc(25)} />
+                <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p2"} stroke={selectedId === "sys_p2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p2" ? sc(3) : sc(25)} />
               </React.Fragment>
             )}
 
             {planes.map(pl => {
-              if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 25} />;
-              if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 25} />;
-              if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 25} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 25} /></React.Fragment>;
+              if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />;
+              if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />;
+              if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} /></React.Fragment>;
               return (
                 <React.Fragment key={pl.id}>
-                  <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={15} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl_${pl.id}`} stroke={selectedId === `pl_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl_${pl.id}` ? 3 : 25} />
-                  <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={12} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? 3 : 25} />
-                  <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={12} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? 3 : 25} />
+                  <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl_${pl.id}`} stroke={selectedId === `pl_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl_${pl.id}` ? sc(3) : sc(25)} />
+                  <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />
+                  <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />
                 </React.Fragment>
               );
             })}
 
             {segments.map(seg => (
               <React.Fragment key={seg.id}>
-                {!seg.isDashed && <><Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={10} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg1_${seg.id}`} stroke={selectedId === `seg1_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg1_${seg.id}` ? 3 : 25} />
-                <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={10} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg2_${seg.id}`} stroke={selectedId === `seg2_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg2_${seg.id}` ? 3 : 25} /></>}
+                {!seg.isDashed && <><Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg1_${seg.id}`} stroke={selectedId === `seg1_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg1_${seg.id}` ? sc(3) : sc(25)} />
+                <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg2_${seg.id}`} stroke={selectedId === `seg2_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg2_${seg.id}` ? sc(3) : sc(25)} /></>}
               </React.Fragment>
             ))}
             {pts.map(p => p.nodes.map(n => (
-              <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={12} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'punto', p.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pt_${n.id}`} stroke={selectedId === `pt_${n.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pt_${n.id}` ? 3 : 25} />
+              <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'punto', p.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pt_${n.id}`} stroke={selectedId === `pt_${n.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pt_${n.id}` ? sc(3) : sc(25)} />
             )))}
           </Group>
         </Layer>
@@ -753,6 +792,7 @@ function View2D({ ex }: { ex: Exercise }) {
           <div style={{fontSize: '0.75em', color: '#00d2ff', padding: '2px 5px', borderBottom: '1px solid #444', marginBottom: '5px'}}>Editar Elemento:</div>
           {contextMenu.items.map((it, i) => {
             const isSys = it.id.startsWith('sys_');
+            const isLineOrPlane = it.id.startsWith('seg') || it.id.startsWith('pl');
             return (
             <div key={i} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
               <div style={{flex: 1, padding: '10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.85em'}}
@@ -761,6 +801,21 @@ function View2D({ ex }: { ex: Exercise }) {
                    onClick={() => { setSelectedId(it.id); setContextMenu(null); }}>
                   ✎ Aislar Nodo
               </div>
+              {!isSys && isLineOrPlane && (
+                 <div style={{padding: '10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.85em'}}
+                      onMouseEnter={e => e.currentTarget.style.background = '#00d2ff'}
+                      onMouseLeave={e => e.currentTarget.style.background = '#363654'}
+                      onClick={() => {
+                         let type: 'recta' | 'plano' = 'recta';
+                         let rId = it.id;
+                         if (it.id.startsWith('pl')) { type = 'plano'; rId = it.id.split('_')[1]; }
+                         else if (it.id.startsWith('seg')) { type = 'recta'; rId = it.id.split('_')[1]; }
+                         useStore.getState().toggleLineStyle(ex.id, type, rId);
+                         setContextMenu(null);
+                      }} title="Alternar entre continua, discontinua o automática">
+                     🔄 Alternar Línea
+                 </div>
+              )}
               {!isSys && (
                 <div style={{padding: '10px', cursor: 'pointer', color: 'black', background: '#eccc68', borderRadius: '3px', fontSize: '0.85em', fontWeight: 'bold'}}
                      onMouseEnter={e => e.currentTarget.style.background = '#ffdd59'}
@@ -1080,7 +1135,6 @@ export default function App() {
                             const startY = e.clientY; 
                             const startH = parseFloat(ex.h) || 115;
                             
-                            // Sincronizar todos los ejercicios de la misma fila para que no se bloqueen
                             let rowItems: Exercise[] = [];
                             let tempW = 0;
                             let tempRow: Exercise[] = [];
