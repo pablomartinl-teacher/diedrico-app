@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// https://vite.dev/config/
 export default defineConfig({
+  base: '/diedrico-app/', // <-- AÑADE ESTA LÍNEA (ej: '/diedrico-app/')
   plugins: [react()],
 })
