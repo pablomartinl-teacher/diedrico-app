@@ -912,7 +912,7 @@ export default function App() {
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
         
         .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: stretch; align-items: stretch; width: 100%; }
-        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; margin-right: -1.5px; margin-bottom: -1.5px; background: white; overflow: hidden; }
+        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
         
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.2; word-wrap: break-word; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.2; word-wrap: break-word; }
@@ -937,7 +937,7 @@ export default function App() {
           .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: 210mm; min-height: 297mm; } 
           .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; }
           .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: stretch; align-items: stretch; width: 100%; }
-          .exercise-box { flex-grow: 1; resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; margin-right: -1.5px; margin-bottom: -1.5px; } 
+          .exercise-box { flex-grow: 1; resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
         }
       `}</style>
       
