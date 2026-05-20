@@ -911,16 +911,16 @@ export default function App() {
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
         
-        .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: stretch; align-items: stretch; width: 100%; }
-        .exercise-box { flex-grow: 1; display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
+        .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; width: 100%; }
+        .exercise-box { display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
         
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.2; word-wrap: break-word; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.2; word-wrap: break-word; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
         
-        .side-handle-r { position: absolute; right: 0; top: 0; bottom: 0; width: 15px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
+        .side-handle-r { position: absolute; right: -5px; top: 0; bottom: 0; width: 15px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
-        .side-handle-b { position: absolute; left: 0; right: 0; bottom: 0; height: 15px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
+        .side-handle-b { position: absolute; left: 0; right: 0; bottom: -5px; height: 15px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-b:hover, .side-handle-b:active { background: rgba(0, 210, 255, 0.4); }
         
         @media (max-width: 768px) {
@@ -934,10 +934,10 @@ export default function App() {
           .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
           .no-print { display: none !important; } 
           .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; zoom: 1 !important; transform: none !important; } 
-          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: 210mm; min-height: 297mm; } 
+          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: 210mm; height: 297mm; } 
           .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; }
-          .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: stretch; align-items: stretch; width: 100%; }
-          .exercise-box { flex-grow: 1; resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
+          .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; width: 100%; }
+          .exercise-box { resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
         }
       `}</style>
       
@@ -1043,7 +1043,7 @@ export default function App() {
 
                   <div className="exercises-grid">
                     {pageExs.map((ex) => (
-                      <div key={ex.id} className="exercise-box" style={{ width: ex.w, minHeight: ex.h }}>
+                      <div key={ex.id} className="exercise-box" style={{ flexBasis: ex.w, minHeight: ex.h }}>
                         
                         <div className="no-print side-handle-r" onPointerDown={(e) => {
                             e.preventDefault(); e.stopPropagation();
@@ -1062,13 +1062,13 @@ export default function App() {
                               const deltaPct = (dX / parentW) * 100;
                               
                               if (isSameRow) {
-                                const maxW = startW + nextStartW - 20;
-                                const newW = Math.max(20, Math.min(maxW, startW + deltaPct));
+                                const maxW = startW + nextStartW - 10;
+                                const newW = Math.max(10, Math.min(maxW, startW + deltaPct));
                                 const newNextW = startW + nextStartW - newW;
                                 useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
                                 useStore.getState().updateBoxSize(nextEx.id, newNextW + '%', nextEx.h);
                               } else {
-                                const newW = Math.min(100, Math.max(20, startW + deltaPct));
+                                const newW = Math.min(100, Math.max(10, startW + deltaPct));
                                 useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
                               }
                             };
