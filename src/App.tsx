@@ -911,7 +911,7 @@ export default function App() {
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
         
-        .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; width: 100%; }
+        .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
         .exercise-box { display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
         
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.2; word-wrap: break-word; }
@@ -936,7 +936,7 @@ export default function App() {
           .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; zoom: 1 !important; transform: none !important; } 
           .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: 210mm; height: 297mm; } 
           .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; }
-          .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; width: 100%; }
+          .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
           .exercise-box { resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
         }
       `}</style>
@@ -1078,10 +1078,34 @@ export default function App() {
                         <div className="no-print side-handle-b" onPointerDown={(e) => {
                             e.preventDefault(); e.stopPropagation();
                             const startY = e.clientY; 
-                            const startH = parseInt(ex.h) || 115;
+                            const startH = parseFloat(ex.h) || 115;
+                            
+                            // Sincronizar todos los ejercicios de la misma fila para que no se bloqueen
+                            let rowItems: Exercise[] = [];
+                            let tempW = 0;
+                            let tempRow: Exercise[] = [];
+                            for (const item of pageExs) {
+                              const w = parseFloat(item.w) || 50;
+                              if (tempW + w > 101 && tempRow.length > 0) {
+                                if (tempRow.some(i => i.id === ex.id)) {
+                                  rowItems = tempRow;
+                                }
+                                tempRow = [item];
+                                tempW = w;
+                              } else {
+                                tempRow.push(item);
+                                tempW += w;
+                              }
+                            }
+                            if (tempRow.some(i => i.id === ex.id)) {
+                              rowItems = tempRow;
+                            }
+
                             const onMove = (evt: PointerEvent) => {
                               const newH = Math.max(50, startH + (evt.clientY - startY) * 0.264583);
-                              useStore.getState().updateBoxSize(ex.id, ex.w, newH + 'mm');
+                              rowItems.forEach(item => {
+                                useStore.getState().updateBoxSize(item.id, item.w, newH + 'mm');
+                              });
                             };
                             const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
                             window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
