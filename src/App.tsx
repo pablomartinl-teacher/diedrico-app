@@ -1,6 +1,6 @@
 import React, { useState, useRef, useLayoutEffect, useMemo } from 'react';
 import { create } from 'zustand';
-import { Stage, Layer, Shape, Circle, Group } from 'react-konva';
+import { Stage, Layer, Shape, Circle, Group, Line } from 'react-konva';
 
 // ==========================================
 // 1. EL CEREBRO MATEMÁTICO (ZUSTAND)
@@ -487,7 +487,7 @@ function View2D({ ex }: { ex: Exercise }) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ w: 800, h: 400 });
-  const [contextMenu, setContextMenu] = useState<{x:number, y:number, items: {label:string, id:string}[]} | null>(null);
+  const [contextMenu, setContextMenu] = useState<{x:number, y:number, items: any[]} | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useLayoutEffect(() => {
@@ -507,6 +507,8 @@ function View2D({ ex }: { ex: Exercise }) {
 
   const handleHover = (e: any) => { e.target.moveToTop(); e.target.scale({x:1.5, y:1.5}); document.body.style.cursor='pointer'; };
   const handleOut = (e: any) => { e.target.scale({x:1, y:1}); document.body.style.cursor='default'; };
+  const handleHoverLine = () => { document.body.style.cursor='pointer'; };
+  const handleOutLine = () => { document.body.style.cursor='default'; };
 
   const drawHaloText = (ctx: any, text: string, x: number, y: number, font = getFont(15, "bold"), align = "left") => {
     if (!text) return;
@@ -731,16 +733,49 @@ function View2D({ ex }: { ex: Exercise }) {
                  const stage = e.target.getStage(); const pos = stage?.getPointerPosition();
                  if (!stage || !pos) return;
                  const shapes = stage.getAllIntersections(pos);
-                 const handleShapes = shapes.filter((s:any) => s.getClassName() === 'Circle' && s.attrs.name && s.attrs.id);
+                 const handleShapes = shapes.filter((s:any) => (s.getClassName() === 'Circle' || s.getClassName() === 'Line') && s.attrs.name && s.attrs.id);
+                 
                  if (handleShapes.length > 0) {
-                   const unique = Array.from(new Set(handleShapes));
-                   setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, items: unique.map((s:any) => ({label: s.attrs.name, id: s.attrs.id})) });
+                   const uniqueMap = new Map();
+                   handleShapes.forEach((s:any) => {
+                     let rId = s.attrs.id;
+                     if (rId.includes('_')) rId = rId.split('_')[1];
+                     
+                     let label = s.attrs.name;
+                     if (label.includes('Extremo') || label.includes('Recta')) label = 'Recta ' + label.replace(/Extremo |Recta | \(.*/g, '').replace(/[12]/g, '');
+                     else if (label.includes('Traza') || label.includes('Plano')) label = 'Plano ' + label.replace(/Traza |Plano | Horizontal | Frontal | Oblicuo /g, '').replace(/[12]/g, '');
+                     else if (label.includes('Punto')) label = 'Punto ' + label.replace(/Punto /, '').replace(/[12]/g, '');
+                     
+                     if (!uniqueMap.has(rId)) {
+                       uniqueMap.set(rId, { label: label.trim(), id: s.attrs.id });
+                     }
+                   });
+                   setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, items: Array.from(uniqueMap.values()) });
                  } else { setContextMenu(null); }
                }}>
           <Layer scaleX={scale} scaleY={scale} x={offsetX} y={offsetY}>
             <Shape sceneFunc={drawScene} />
             
             <Group visible={!isPrinting}>
+              {/* LÍNEAS INVISIBLES DE HITBOX PARA RECTAS */}
+              {segments.map(seg => (
+                <Line key={`hit_seg_${seg.id}`} id={`segHit_${seg.id}`} name={`Recta ${seg.label}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} />
+              ))}
+
+              {/* LÍNEAS INVISIBLES DE HITBOX PARA PLANOS */}
+              {planes.map(pl => {
+                const hitProps = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, listening: true };
+                if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} id={`plHit_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} />;
+                if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} id={`plHit_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} />;
+                if (pl.type === 'paralelo_lt') return <React.Fragment key={`hit_pl_${pl.id}`}><Line id={`plHit2_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} /><Line id={`plHit1_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} /></React.Fragment>;
+                return (
+                  <React.Fragment key={`hit_pl_${pl.id}`}>
+                    <Line id={`plHit2_${pl.id}`} name={`Plano ${pl.name}`} points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} {...hitProps} />
+                    <Line id={`plHit1_${pl.id}`} name={`Plano ${pl.name}`} points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} {...hitProps} />
+                  </React.Fragment>
+                );
+              })}
+
               <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt1" ? sc(3) : sc(25)} />
               <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt2" ? sc(3) : sc(25)} />
 
@@ -789,87 +824,89 @@ function View2D({ ex }: { ex: Exercise }) {
       </div>
 
       {contextMenu && (
-        <div style={{position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1e1e2f', border: '1px solid #00d2ff', borderRadius: '5px', padding: '5px', zIndex: 9999, boxShadow: '0 4px 6px rgba(0,0,0,0.3)', width: 'max-content'}}>
-          <div style={{fontSize: '0.75em', color: '#00d2ff', padding: '2px 5px', borderBottom: '1px solid #444', marginBottom: '5px'}}>Editar Elemento:</div>
+        <div style={{position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1e1e2f', border: '1px solid #00d2ff', borderRadius: '5px', padding: '10px', zIndex: 9999, boxShadow: '0 4px 6px rgba(0,0,0,0.3)', width: 'max-content'}}>
+          <div style={{fontSize: '0.75em', color: '#00d2ff', paddingBottom: '5px', borderBottom: '1px solid #444', marginBottom: '8px', textTransform:'uppercase', letterSpacing:'1px'}}>Editar Elemento:</div>
           {contextMenu.items.map((it, i) => {
             const isSys = it.id.startsWith('sys_');
             const isLineOrPlane = it.id.startsWith('seg') || it.id.startsWith('pl');
             return (
-            <div key={i} style={{ display: 'flex', gap: '4px', marginBottom: '2px' }}>
-              <div style={{flex: 1, padding: '10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.85em'}}
-                   onMouseEnter={e => e.currentTarget.style.background = '#00d2ff'}
-                   onMouseLeave={e => e.currentTarget.style.background = '#363654'}
-                   onClick={() => { setSelectedId(it.id); setContextMenu(null); }}>
-                  ✎ Aislar Nodo
+            <div key={i} style={{ marginBottom: i < contextMenu.items.length-1 ? '12px' : '0' }}>
+              <div style={{fontSize: '0.9em', color: '#fff', fontWeight: 'bold', marginBottom: '6px', textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>{it.label}</div>
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <div style={{flex: 1, padding: '6px 10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.8em', textAlign:'center'}}
+                     onMouseEnter={e => e.currentTarget.style.background = '#00d2ff'}
+                     onMouseLeave={e => e.currentTarget.style.background = '#363654'}
+                     onClick={() => { setSelectedId(it.id); setContextMenu(null); }}>
+                    ✎ Aislar
+                </div>
+                {!isSys && isLineOrPlane && (
+                   <div style={{padding: '6px 10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.8em', textAlign:'center'}}
+                        onMouseEnter={e => e.currentTarget.style.background = '#00d2ff'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#363654'}
+                        onClick={() => {
+                           let type: 'recta' | 'plano' = 'recta';
+                           let rId = it.id.split('_')[1];
+                           if (it.id.startsWith('pl')) type = 'plano';
+                           useStore.getState().toggleLineStyle(ex.id, type, rId);
+                           setContextMenu(null);
+                        }} title="Alternar entre continua, discontinua o automática">
+                       🔄 Línea
+                   </div>
+                )}
+                {!isSys && (
+                  <div style={{padding: '6px 10px', cursor: 'pointer', color: 'black', background: '#eccc68', borderRadius: '3px', fontSize: '0.8em', fontWeight: 'bold', textAlign:'center'}}
+                       onMouseEnter={e => e.currentTarget.style.background = '#ffdd59'}
+                       onMouseLeave={e => e.currentTarget.style.background = '#eccc68'}
+                       onClick={() => {
+                          let type: 'punto' | 'recta' | 'plano' = 'punto';
+                          let rId = it.id;
+                          if (it.id.includes('_')) rId = it.id.split('_')[1];
+                          if (it.id.startsWith('pl')) type = 'plano';
+                          else if (it.id.startsWith('seg')) type = 'recta';
+                          else if (it.id.startsWith('pt_')) {
+                              type = 'punto';
+                              let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
+                              if(thePt) rId = thePt.id;
+                          }
+                          useStore.getState().updateName(ex.id, type, rId, "");
+                          setContextMenu(null);
+                       }} title="Ocultar el nombre dejándolo en blanco">
+                      🆑 Nombre
+                  </div>
+                )}
+                {!isSys && (
+                  <div style={{padding: '6px 10px', cursor: 'pointer', color: 'white', background: '#ff4757', borderRadius: '3px', fontSize: '0.8em', textAlign:'center'}}
+                       onMouseEnter={e => e.currentTarget.style.background = '#ff6b81'}
+                       onMouseLeave={e => e.currentTarget.style.background = '#ff4757'}
+                       onClick={() => {
+                          let type: 'punto' | 'recta' | 'plano' = 'punto';
+                          let rId = it.id;
+                          if (it.id.includes('_')) rId = it.id.split('_')[1];
+                          if (it.id.startsWith('pl')) type = 'plano';
+                          else if (it.id.startsWith('seg')) type = 'recta';
+                          else if (it.id.startsWith('pt_')) {
+                              type = 'punto';
+                              let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
+                              if(thePt) rId = thePt.id;
+                          }
+                          removeElement(ex.id, type, rId);
+                          setContextMenu(null);
+                       }} title="Borrar elemento entero">
+                      🗑️
+                  </div>
+                )}
               </div>
-              {!isSys && isLineOrPlane && (
-                 <div style={{padding: '10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.85em'}}
-                      onMouseEnter={e => e.currentTarget.style.background = '#00d2ff'}
-                      onMouseLeave={e => e.currentTarget.style.background = '#363654'}
+              {contextMenu.items.some(i => i.id?.startsWith('pl') && i.id.split('_')[1] === it.id.split('_')[1]) && (
+                 <div style={{padding: '6px 10px', cursor: 'pointer', color: 'black', background: '#eccc68', marginTop: '4px', borderRadius: '3px', fontSize: '0.8em', fontWeight: 'bold', textAlign: 'center'}}
                       onClick={() => {
-                         let type: 'recta' | 'plano' = 'recta';
-                         let rId = it.id;
-                         if (it.id.startsWith('pl')) { type = 'plano'; rId = it.id.split('_')[1]; }
-                         else if (it.id.startsWith('seg')) { type = 'recta'; rId = it.id.split('_')[1]; }
-                         useStore.getState().toggleLineStyle(ex.id, type, rId);
-                         setContextMenu(null);
-                      }} title="Alternar entre continua, discontinua o automática">
-                     🔄 Alternar Línea
+                          const planeId = it.id.split('_')[1];
+                          togglePlaneType(ex.id, planeId); setContextMenu(null);
+                      }}>
+                     ⮂ Alternar Paralelo LT
                  </div>
-              )}
-              {!isSys && (
-                <div style={{padding: '10px', cursor: 'pointer', color: 'black', background: '#eccc68', borderRadius: '3px', fontSize: '0.85em', fontWeight: 'bold'}}
-                     onMouseEnter={e => e.currentTarget.style.background = '#ffdd59'}
-                     onMouseLeave={e => e.currentTarget.style.background = '#eccc68'}
-                     onClick={() => {
-                        let type: 'punto' | 'recta' | 'plano' = 'punto';
-                        let rId = it.id;
-                        if (it.id.startsWith('pl')) { type = 'plano'; rId = it.id.split('_')[1]; }
-                        else if (it.id.startsWith('seg')) { type = 'recta'; rId = it.id.split('_')[1]; }
-                        else if (it.id.startsWith('pt_')) {
-                            type = 'punto';
-                            let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === it.id.split('_')[1]));
-                            if(thePt) rId = thePt.id;
-                        }
-                        useStore.getState().updateName(ex.id, type, rId, "");
-                        setContextMenu(null);
-                     }} title="Ocultar el nombre dejándolo en blanco">
-                    🆑 Borrar Nombre
-                </div>
-              )}
-              {!isSys && (
-                <div style={{padding: '10px', cursor: 'pointer', color: 'white', background: '#ff4757', borderRadius: '3px', fontSize: '0.85em'}}
-                     onMouseEnter={e => e.currentTarget.style.background = '#ff6b81'}
-                     onMouseLeave={e => e.currentTarget.style.background = '#ff4757'}
-                     onClick={() => {
-                        let type: 'punto' | 'recta' | 'plano' = 'punto';
-                        let rId = it.id;
-                        if (it.id.startsWith('pl')) { type = 'plano'; rId = it.id.split('_')[1]; }
-                        else if (it.id.startsWith('seg')) { type = 'recta'; rId = it.id.split('_')[1]; }
-                        else if (it.id.startsWith('pt_')) {
-                            type = 'punto';
-                            let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === it.id.split('_')[1]));
-                            if(thePt) rId = thePt.id;
-                        }
-                        removeElement(ex.id, type, rId);
-                        setContextMenu(null);
-                     }} title="Borrar elemento entero">
-                    🗑️
-                </div>
               )}
             </div>
           )})}
-          
-          {contextMenu.items.some(it => it.id?.startsWith('pl')) && (
-             <div style={{padding: '10px', cursor: 'pointer', color: 'black', background: '#eccc68', marginTop: '5px', borderRadius: '3px', fontSize: '0.8em', fontWeight: 'bold'}}
-                  onClick={() => {
-                      const planeIdStr = contextMenu.items.find(it => it.id?.startsWith('pl'))!.id;
-                      const planeId = planeIdStr.split('_')[1];
-                      togglePlaneType(ex.id, planeId); setContextMenu(null);
-                  }}>
-                 ⮂ Alternar Paralelo LT
-             </div>
-          )}
         </div>
       )}
     </div>
