@@ -77,7 +77,7 @@ export const useStore = create<CadStore>()((set, get) => ({
   addExercise: (opts) => set((state) => {
     const originX = 400; const ltY = 250;
     let planes: ExPlane[] = []; let segments: ExSegment[] = []; let pts: any[] = [];
-    let title = "Ejercicio"; let dataStr = ""; let w = "50%"; let h = "115mm";
+    let title = "Ejercicio"; let dataStr = ""; let w = "50%"; let h = "136mm";
 
     const t = opts.type;
 
@@ -958,10 +958,10 @@ export default function App() {
     let rowW = 0;
     
     exercises.forEach(ex => {
-      let hVal = parseInt(ex.h) || 115;
+      let hVal = parseInt(ex.h) || 136;
       let wVal = parseFloat(ex.w) || 50;
 
-      const MAX_H = pages.length === 0 ? 245 : 265; 
+      const MAX_H = pages.length === 0 ? 275 : 285; 
 
       if (rowW + wVal <= 101) { 
         rowW += wVal;
@@ -1182,7 +1182,7 @@ export default function App() {
                         <div className="no-print side-handle-b" onPointerDown={(e) => {
                             e.preventDefault(); e.stopPropagation();
                             const startY = e.clientY; 
-                            const startH = parseFloat(ex.h) || 115;
+                            const startH = parseFloat(ex.h) || 136;
                             
                             let rowItems: Exercise[] = [];
                             let tempW = 0;
