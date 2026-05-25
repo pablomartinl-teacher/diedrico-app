@@ -30,6 +30,7 @@ interface CadStore {
   addFreeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano') => void;
   removeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano', elemId: string) => void;
   updateName: (exId: string, elemType: 'punto' | 'recta' | 'plano', elemId: string, newName: string) => void;
+  updateExerciseText: (exId: string, field: 'title' | 'dataStr', text: string) => void;
   saveData: () => void;
   loadData: () => void;
   downloadData: () => void;
@@ -341,6 +342,13 @@ export const useStore = create<CadStore>()((set, get) => ({
       else if(elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? {...seg, label: newName} : seg);
       else if(elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
       return {...ex, state: s};
+    })
+  })),
+
+  updateExerciseText: (exId, field, text) => set((state) => ({
+    exercises: state.exercises.map(ex => {
+      if (ex.id !== exId) return ex;
+      return { ...ex, [field]: text };
     })
   })),
 
@@ -961,7 +969,7 @@ export default function App() {
       let hVal = parseInt(ex.h) || 136;
       let wVal = parseFloat(ex.w) || 50;
 
-      const MAX_H = 275; 
+      const MAX_H = pages.length === 0 ? 275 : 305; 
 
       if (rowW + wVal <= 101) { 
         rowW += wVal;
@@ -1008,7 +1016,7 @@ export default function App() {
         .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
         .exercise-box { display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
         
-        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; outline: none; text-align: left; line-height: 1.2; word-wrap: break-word; }
+        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; word-wrap: break-word; line-height: 1.2; }
         .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.2; word-wrap: break-word; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
         
@@ -1132,16 +1140,20 @@ export default function App() {
             {paginatedExercises.map((pageExs, pageIdx) => (
               <div key={pageIdx} className="a4-sheet">
                 <div className="page-border">
-                  <div className="cajetin">
-                    <div className="cajetin-top">
-                      <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>Colegio Nuestra Señora de los Infantes</span>
-                      <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>1º BACHILLERATO</span>
+                  
+                  {/* EL CAJETÍN AHORA SOLO APARECE EN LA PÁGINA 1 (pageIdx === 0) */}
+                  {pageIdx === 0 && (
+                    <div className="cajetin">
+                      <div className="cajetin-top">
+                        <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>Colegio Nuestra Señora de los Infantes</span>
+                        <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>1º BACHILLERATO</span>
+                      </div>
+                      <div className="cajetin-bottom">
+                        <span style={{flex: 1, display:'flex', alignItems:'flex-end', whiteSpace:'nowrap'}}>Nombre: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
+                        <span style={{width: '30%', display:'flex', alignItems:'flex-end', marginLeft:'20px', whiteSpace:'nowrap'}}>Curso: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
+                      </div>
                     </div>
-                    <div className="cajetin-bottom">
-                      <span style={{flex: 1, display:'flex', alignItems:'flex-end', whiteSpace:'nowrap'}}>Nombre: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
-                      <span style={{width: '30%', display:'flex', alignItems:'flex-end', marginLeft:'20px', whiteSpace:'nowrap'}}>Curso: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
-                    </div>
-                  </div>
+                  )}
 
                   <div className="exercises-grid">
                     {pageExs.map((ex) => (
@@ -1213,8 +1225,15 @@ export default function App() {
                         }} />
 
                         <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
-                        <div className="exercise-title" contentEditable style={{ paddingRight: '30px' }}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b> {ex.title}</div>
-                        {ex.dataStr && <div className="exercise-data" contentEditable>{ex.dataStr}</div>}
+                        
+                        {/* ENUNCIADO AUTOGUARDABLE */}
+                        <div className="exercise-title" style={{ paddingRight: '30px', display: 'flex', gap: '4px' }}>
+                          <span contentEditable={false}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b></span>
+                          <span contentEditable suppressContentEditableWarning style={{ flex: 1, outline: 'none' }} onBlur={e => useStore.getState().updateExerciseText(ex.id, 'title', e.currentTarget.innerText)}>{ex.title}</span>
+                        </div>
+                        
+                        {/* DATOS AUTOGUARDABLES */}
+                        {ex.dataStr && <div className="exercise-data" contentEditable suppressContentEditableWarning onBlur={e => useStore.getState().updateExerciseText(ex.id, 'dataStr', e.currentTarget.innerText)}>{ex.dataStr}</div>}
                         
                         <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
                           <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
