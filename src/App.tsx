@@ -16,6 +16,10 @@ export interface Exercise {
 interface CadStore {
   exercises: Exercise[];
   isPrinting: boolean;
+  pageSize: 'A4' | 'A3';
+  fontFamily: string;
+  fontSize: number;
+  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number}>) => void;
   setPrinting: (val: boolean) => void;
   addExercise: (opts: any) => void;
   removeExercise: (id: string) => void;
@@ -56,6 +60,11 @@ const initialExercises = savedData ? JSON.parse(savedData) : [];
 export const useStore = create<CadStore>()((set, get) => ({
   exercises: initialExercises,
   isPrinting: false,
+  pageSize: 'A4',
+  fontFamily: "'Segoe UI', sans-serif",
+  fontSize: 13,
+  
+  setPageConfig: (config) => set((state) => ({ ...state, ...config })),
   setPrinting: (val) => set({ isPrinting: val }),
   
   saveData: () => { 
@@ -925,13 +934,10 @@ function View2D({ ex }: { ex: Exercise }) {
 // 3. LA INTERFAZ PRINCIPAL (MENÚS Y PAGINACIÓN)
 // ==========================================
 export default function App() {
-  const exercises = useStore((state) => state.exercises);
-  const addExercise = useStore((state) => state.addExercise);
-  const removeExercise = useStore((state) => state.removeExercise);
-  const addFreeElement = useStore((state) => state.addFreeElement);
-  const updateBoxSize = useStore((state) => state.updateBoxSize);
-  const saveData = useStore((state) => state.saveData);
-  const loadData = useStore((state) => state.loadData);
+  const { 
+    exercises, addExercise, removeExercise, addFreeElement, updateBoxSize, saveData, loadData,
+    pageSize, fontFamily, fontSize, setPageConfig 
+  } = useStore();
   
   const [type, setType] = useState('punto_coord');
   
@@ -994,6 +1000,8 @@ export default function App() {
     return pages;
   }, [exercises]);
 
+  const PAGE_W = pageSize === 'A3' ? '420mm' : '210mm';
+
   return (
     <>
       <style>{`
@@ -1006,18 +1014,18 @@ export default function App() {
         @media screen and (min-width: 769px) and (max-height: 850px) { .sheet-container { zoom: 0.65; } }
         @media screen and (min-width: 769px) and (max-height: 750px) { .sheet-container { zoom: 0.55; } }
         
-        .a4-sheet { background: white; width: 210mm; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; display: flex; flex-direction: column; overflow: hidden; }
+        .page-sheet { background: white; width: ${PAGE_W}; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease; }
         
         .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
-        .cajetin { width: 100%; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; }
+        .cajetin { width: ${pageSize === 'A3' ? '204mm' : '100%'}; border-right: ${pageSize === 'A3' ? '2px solid black' : 'none'}; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; transition: width 0.3s ease; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
         
         .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
         .exercise-box { display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
         
-        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-size: 0.8rem; font-weight: bold; word-wrap: break-word; line-height: 1.2; }
-        .exercise-data { font-family: monospace; font-size: 0.75rem; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.2; word-wrap: break-word; }
+        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; word-wrap: break-word; line-height: 1.3; font-family: ${fontFamily}; font-size: ${fontSize}px; text-align: justify; }
+        .exercise-data { font-family: ${fontFamily}; font-size: ${fontSize - 1}px; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.3; word-wrap: break-word; text-align: justify; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
         
         .side-handle-r { position: absolute; right: -5px; top: 0; bottom: 0; width: 15px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
@@ -1036,7 +1044,10 @@ export default function App() {
           .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
           .no-print { display: none !important; } 
           .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; zoom: 1 !important; transform: none !important; } 
-          .a4-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: 210mm; height: 297mm; } 
+          
+          @page { size: ${pageSize === 'A3' ? 'A3 landscape' : 'A4 portrait'}; margin: 0; }
+          .page-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: ${PAGE_W}; height: 297mm; } 
+          
           .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; }
           .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
           .exercise-box { resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
@@ -1048,6 +1059,26 @@ export default function App() {
           <h2 style={{ color: '#00d2ff', margin: 0 }}>Editor Diédrico CAD</h2>
           
           <div style={{ background: '#1e1e2f', padding: '15px', borderRadius: '8px' }}>
+            <label style={{ color: '#00d2ff', fontWeight: 'bold' }}>Configuración de Página:</label>
+            <select value={pageSize} onChange={e => setPageConfig({pageSize: e.target.value as 'A4'|'A3'})} style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', borderRadius: '4px', marginBottom: '10px' }}>
+              <option value="A4">A4 (Vertical)</option>
+              <option value="A3">A3 (Horizontal)</option>
+            </select>
+
+            <label style={{ color: '#00d2ff', fontWeight: 'bold' }}>Fuente (Letra):</label>
+            <select value={fontFamily} onChange={e => setPageConfig({fontFamily: e.target.value})} style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', borderRadius: '4px', marginBottom: '10px' }}>
+              <option value="'Segoe UI', sans-serif">Segoe UI</option>
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="'Times New Roman', serif">Times New Roman</option>
+              <option value="'Courier New', monospace">Courier New</option>
+              <option value="'Georgia', serif">Georgia</option>
+            </select>
+
+            <label style={{ color: '#00d2ff', fontWeight: 'bold' }}>Tamaño Letra ({fontSize}px):</label>
+            <input type="range" min="10" max="24" value={fontSize} onChange={e => setPageConfig({fontSize: Number(e.target.value)})} style={{ width: '100%', marginTop: '5px', marginBottom: '15px' }} />
+            
+            <hr style={{ border: 'none', borderTop: '1px solid #444', marginBottom: '15px' }} />
+
             <label style={{ color: '#00d2ff', fontWeight: 'bold' }}>Tipo de Ejercicio:</label>
             <select value={type} onChange={e => setType(e.target.value)} style={{ width: '100%', padding: '12px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', fontWeight: 'bold', fontSize: '16px' }}>
               <option value="punto_coord">1. Puntos</option><option value="rectas">2. Rectas</option><option value="plano_coord">3. Planos (Coordenadas)</option>
@@ -1138,10 +1169,9 @@ export default function App() {
         <div className="main-area" style={{ flex: 1, background: '#151520', overflowY: 'auto' }}>
           <div className="sheet-container">
             {paginatedExercises.map((pageExs, pageIdx) => (
-              <div key={pageIdx} className="a4-sheet">
+              <div key={pageIdx} className="page-sheet">
                 <div className="page-border">
                   
-                  {/* EL CAJETÍN AHORA SOLO APARECE EN LA PÁGINA 1 (pageIdx === 0) */}
                   {pageIdx === 0 && (
                     <div className="cajetin">
                       <div className="cajetin-top">
@@ -1226,13 +1256,13 @@ export default function App() {
 
                         <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
                         
-                        {/* ENUNCIADO AUTOGUARDABLE */}
+                        {/* ENUNCIADO AUTOGUARDABLE Y JUSTIFICADO */}
                         <div className="exercise-title" style={{ paddingRight: '30px', display: 'flex', gap: '4px' }}>
                           <span contentEditable={false}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b></span>
                           <span contentEditable suppressContentEditableWarning style={{ flex: 1, outline: 'none' }} onBlur={e => useStore.getState().updateExerciseText(ex.id, 'title', e.currentTarget.innerText)}>{ex.title}</span>
                         </div>
                         
-                        {/* DATOS AUTOGUARDABLES */}
+                        {/* DATOS AUTOGUARDABLES Y JUSTIFICADOS */}
                         {ex.dataStr && <div className="exercise-data" contentEditable suppressContentEditableWarning onBlur={e => useStore.getState().updateExerciseText(ex.id, 'dataStr', e.currentTarget.innerText)}>{ex.dataStr}</div>}
                         
                         <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
