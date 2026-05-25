@@ -1,4 +1,4 @@
-import React, { useState, useRef, useLayoutEffect, useMemo, useEffect } from 'react';
+import React, { useState, useRef, useLayoutEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import { Stage, Layer, Shape, Circle, Group, Line } from 'react-konva';
 
@@ -14,7 +14,7 @@ export interface Exercise {
   state: { ltY: number; originX: number; ppX: number; reqRegla: boolean; reqPP: boolean; reqOrigin: boolean; planes: ExPlane[]; segments: ExSegment[]; pts: {id:string, name:string, nodes:ExNode[]}[]; bounds?: { ltX1: number; ltX2: number; oY1: number; oY2: number; pY1: number; pY2: number; }; constraints: Constraint[]; };
 }
 
-export interface Selection { exId: string; type: 'punto'|'recta'|'plano'; id: string; label: string; }
+export interface Selection { exId: string; type: 'punto'|'recta'|'plano'; id: string; rawId: string; label: string; }
 
 interface CadStore {
   exercises: Exercise[];
@@ -24,11 +24,12 @@ interface CadStore {
   pageSize: 'A4' | 'A3';
   fontFamily: string;
   fontSize: number;
+  zoom: number;
   selection: Selection[];
   
   setSelection: (sel: Selection[]) => void;
   toggleSelection: (item: Selection) => void;
-  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number}>) => void;
+  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number, zoom: number}>) => void;
   setPrinting: (val: boolean) => void;
   
   undo: () => void;
@@ -52,6 +53,7 @@ interface CadStore {
   updateName: (exId: string, elemType: 'punto' | 'recta' | 'plano', elemId: string, newName: string) => void;
   updateExerciseText: (exId: string, field: 'title' | 'dataStr', text: string) => void;
   
+  addAuxLine: (exId: string, rawId: string, mode: 'parallel' | 'perp') => void;
   addConstraint: (exId: string, type: 'parallel' | 'perp', el1: string, el2: string) => void;
   removeConstraint: (exId: string, constraintId: string) => void;
 
@@ -77,7 +79,6 @@ function applyQuad(val: number, quad: string, isZ: boolean) {
 const savedData = localStorage.getItem('diedrico_autosave');
 const initialExercises = savedData ? JSON.parse(savedData) : [];
 
-// --- Función Matemática para aplicar las restricciones ---
 const enforceConstraints = (s: Exercise['state'], triggerId: string) => {
     let changed = true;
     let iterations = 0;
@@ -124,12 +125,13 @@ export const useStore = create<CadStore>()((set, get) => ({
   pageSize: 'A4',
   fontFamily: "'Segoe UI', sans-serif",
   fontSize: 13,
+  zoom: 1,
   selection: [],
 
   setSelection: (sel) => set({ selection: sel }),
   toggleSelection: (item) => set((state) => {
-      const exists = state.selection.find(s => s.id === item.id);
-      if (exists) return { selection: state.selection.filter(s => s.id !== item.id) };
+      const exists = state.selection.find(s => s.rawId === item.rawId);
+      if (exists) return { selection: state.selection.filter(s => s.rawId !== item.rawId) };
       return { selection: [...state.selection, item] };
   }),
   setPageConfig: (config) => set((state) => ({ ...state, ...config })),
@@ -140,13 +142,13 @@ export const useStore = create<CadStore>()((set, get) => ({
       if (state.past.length === 0) return state;
       const prev = state.past[state.past.length - 1];
       const newPast = state.past.slice(0, state.past.length - 1);
-      return { past: newPast, future: [JSON.parse(JSON.stringify(state.exercises)), ...state.future], exercises: prev };
+      return { past: newPast, future: [JSON.parse(JSON.stringify(state.exercises)), ...state.future], exercises: prev, selection: [] };
   }),
   redo: () => set((state) => {
       if (state.future.length === 0) return state;
       const next = state.future[0];
       const newFuture = state.future.slice(1);
-      return { past: [...state.past, JSON.parse(JSON.stringify(state.exercises))], future: newFuture, exercises: next };
+      return { past: [...state.past, JSON.parse(JSON.stringify(state.exercises))], future: newFuture, exercises: next, selection: [] };
   }),
   
   saveData: () => { 
@@ -155,7 +157,7 @@ export const useStore = create<CadStore>()((set, get) => ({
   },
   loadData: () => { 
     const d = localStorage.getItem('diedrico_pro_data'); 
-    if (d) set({ exercises: JSON.parse(d), past: [], future: [] }); 
+    if (d) set({ exercises: JSON.parse(d), past: [], future: [], selection: [] }); 
     else alert("No hay datos guardados."); 
   },
   downloadData: () => { 
@@ -393,7 +395,7 @@ export const useStore = create<CadStore>()((set, get) => ({
     return { exercises: [...state.exercises, newEx] };
   }),
 
-  removeExercise: (id) => set((state) => { state.pushHistory(); return { exercises: state.exercises.filter(e => e.id !== id) }; }),
+  removeExercise: (id) => set((state) => { state.pushHistory(); return { exercises: state.exercises.filter(e => e.id !== id), selection: [] }; }),
   updateBoxSize: (id, w, h) => set((state) => { state.pushHistory(); return { exercises: state.exercises.map(ex => ex.id === id ? { ...ex, w, h } : ex) }; }),
 
   addFreeElement: (exId, elemType) => set((state) => {
@@ -466,12 +468,61 @@ export const useStore = create<CadStore>()((set, get) => ({
     })};
   }),
 
+  addAuxLine: (exId, rawId, mode) => set((state) => {
+      state.pushHistory();
+      return { exercises: state.exercises.map(ex => {
+        if (ex.id !== exId) return ex;
+        let s = { ...ex.state };
+        let p1 = null, p2 = null;
+        let id = rawId.includes('_') ? rawId.split('_')[1] : rawId;
+
+        if (rawId.includes('seg') || s.segments.find(x => x.id === id)) {
+            let seg = s.segments.find(x => x.id === id);
+            if (seg) { p1 = seg.p1; p2 = seg.p2; }
+        } else if (rawId.includes('pl') || s.planes.find(x => x.id === id)) {
+            let pl = s.planes.find(x => x.id === id);
+            if (pl) {
+                let isTrace1 = rawId.includes('1');
+                if (pl.type === 'paralelo_lt') {
+                    p1 = {x: 0, y: isTrace1 ? pl.p1.y : pl.p2.y}; p2 = {x: 800, y: isTrace1 ? pl.p1.y : pl.p2.y};
+                } else if (pl.type === 'horizontal') {
+                    p1 = {x: 0, y: pl.p2.y}; p2 = {x: 800, y: pl.p2.y};
+                } else if (pl.type === 'frontal') {
+                    p1 = {x: 0, y: pl.p1.y}; p2 = {x: 800, y: pl.p1.y};
+                } else {
+                    p1 = {x: pl.vX, y: s.ltY}; p2 = isTrace1 ? pl.p1 : pl.p2;
+                }
+            }
+        }
+
+        if (p1 && p2) {
+            let cx = (p1.x + p2.x)/2 + 30; let cy = (p1.y + p2.y)/2 - 30; 
+            let dx = p2.x - p1.x; let dy = p2.y - p1.y;
+            let len = Math.sqrt(dx*dx + dy*dy) || 1;
+            let ux = dx/len; let uy = dy/len;
+            
+            let nx1, ny1, nx2, ny2;
+            let lineLen = 150;
+            
+            if (mode === 'parallel') {
+                nx1 = cx - ux * lineLen/2; ny1 = cy - uy * lineLen/2;
+                nx2 = cx + ux * lineLen/2; ny2 = cy + uy * lineLen/2;
+            } else {
+                nx1 = cx - (-uy) * lineLen/2; ny1 = cy - ux * lineLen/2;
+                nx2 = cx + (-uy) * lineLen/2; ny2 = cy + ux * lineLen/2;
+            }
+            
+            s.segments = [...s.segments, { id: uid(), label: '', p1: {x: nx1, y: ny1}, p2: {x: nx2, y: ny2}, customStyle: 'dashed' }];
+        }
+        return { ...ex, state: s };
+      })};
+  }),
+
   addConstraint: (exId, type, el1, el2) => set((state) => {
       state.pushHistory();
       return { exercises: state.exercises.map(ex => {
           if (ex.id !== exId) return ex;
           let s = { ...ex.state };
-          // Quitar restricciones previas de el2
           s.constraints = s.constraints.filter(c => c.el2 !== el2 && c.el1 !== el2);
           s.constraints.push({ id: uid(), type, el1, el2 });
           s = enforceConstraints(s, 'all');
@@ -583,9 +634,6 @@ function View2D({ ex }: { ex: Exercise }) {
   }, []);
 
   const scale = Math.min(dim.w / 800, dim.h / 400) || 1;
-  const W = 800; const H = 400;
-  const offsetX = (dim.w - W * scale) / 2;
-  const offsetY = (dim.h - H * scale) / 2;
   const sc = (val: number) => val / scale;
   const getFont = (size: number, weight = "") => `${weight} ${sc(size)}px Arial`.trim();
 
@@ -596,7 +644,7 @@ function View2D({ ex }: { ex: Exercise }) {
 
   const onPushHistory = () => useStore.getState().pushHistory();
 
-  const isSelected = (id: string) => selection.some(s => s.id === id);
+  const isSelected = (rawId: string) => selection.some(s => s.rawId === rawId);
 
   const drawHaloText = (ctx: any, text: string, x: number, y: number, font = getFont(15, "bold"), align = "left", color = "black") => {
     if (!text) return;
@@ -611,9 +659,10 @@ function View2D({ ex }: { ex: Exercise }) {
     const queueLabel = (text: string, x: number, y: number, font = getFont(15, "bold"), color="black") => { dynLabels.push({text, x, y, font, color}); };
 
     const drawTrueVisibilitySegmentLocal = (seg: ExSegment, stSegments: ExSegment[], ltY: number, isVerticalProj: boolean) => {
-      const selected = isSelected(seg.id);
+      const selected = isSelected(`seg_${seg.id}`);
       const strokeColor = selected ? "#00d2ff" : "black";
       ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = selected ? sc(3) : sc(2.2);
       
       if (seg.customStyle === 'dashed' || (!seg.customStyle && seg.isDashed)) {
          ctx.beginPath(); ctx.setLineDash([sc(5), sc(5)]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
@@ -675,14 +724,14 @@ function View2D({ ex }: { ex: Exercise }) {
       if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor);
     };
 
-    ctx.strokeStyle = "black"; ctx.lineWidth = 2.2;
+    ctx.strokeStyle = "black"; ctx.lineWidth = sc(2.2);
     ctx.beginPath(); ctx.moveTo(b.ltX1, ltY); ctx.lineTo(b.ltX2, ltY); ctx.stroke();
-    ctx.lineWidth = 1.2; ctx.beginPath(); 
+    ctx.lineWidth = sc(1.2); ctx.beginPath(); 
     ctx.moveTo(b.ltX1 + 10, ltY + 6); ctx.lineTo(b.ltX1 + 25, ltY + 6); 
     ctx.moveTo(b.ltX2 - 25, ltY + 6); ctx.lineTo(b.ltX2 - 10, ltY + 6); ctx.stroke();
 
     if (reqRegla) {
-      ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(originX, b.oY1); ctx.lineTo(originX, b.oY2);
+      ctx.lineWidth = sc(1); ctx.beginPath(); ctx.moveTo(originX, b.oY1); ctx.lineTo(originX, b.oY2);
       for(let v = -70; v <= 70; v += 10) {
         let tick = sc(8); ctx.moveTo(originX + v*SF, ltY - tick); ctx.lineTo(originX + v*SF, ltY + tick);
         if(v !== 0) drawHaloText(ctx, v.toString(), originX + v*SF, ltY + sc(22), getFont(11), "center");
@@ -693,51 +742,53 @@ function View2D({ ex }: { ex: Exercise }) {
     }
     
     if (reqOrigin) {
-      ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(originX, ltY - 8); ctx.lineTo(originX, ltY + 8); ctx.stroke();
+      ctx.lineWidth = sc(2); ctx.beginPath(); ctx.moveTo(originX, ltY - 8); ctx.lineTo(originX, ltY + 8); ctx.stroke();
       if(!reqRegla) drawHaloText(ctx, "0", originX + sc(4), ltY + sc(18), getFont(14, "italic"));
     }
 
     if (reqPP) {
-      ctx.lineWidth = 1.8; ctx.setLineDash([sc(10), sc(4), sc(2), sc(4)]);
+      ctx.lineWidth = sc(1.8); ctx.setLineDash([sc(10), sc(4), sc(2), sc(4)]);
       ctx.beginPath(); ctx.moveTo(ppX, b.pY1); ctx.lineTo(ppX, b.pY2); ctx.stroke(); ctx.setLineDash([]);
       drawHaloText(ctx, "PP", ppX + sc(6), b.pY1 + sc(30), getFont(16, "bold"));
     }
 
     planes.forEach((pl: ExPlane) => {
-      const selected = isSelected(pl.id);
-      const strokeColor = selected ? "#00d2ff" : "black";
-      ctx.strokeStyle = strokeColor; ctx.lineWidth = selected ? 3 : 2.2;
-      
-      const applyDash = (isAutoDashed: boolean) => {
+      const applyDashAndColor = (isAutoDashed: boolean, traceRawId: string) => {
+          const selected = isSelected(traceRawId);
+          ctx.strokeStyle = selected ? "#00d2ff" : "black"; 
+          ctx.lineWidth = selected ? sc(3) : sc(2.2);
+          
           if (pl.customStyle === 'solid') ctx.setLineDash([]);
           else if (pl.customStyle === 'dashed') ctx.setLineDash([sc(6), sc(4)]);
           else ctx.setLineDash(isAutoDashed ? [sc(6), sc(4)] : []);
+          return ctx.strokeStyle;
       };
 
       if (pl.type === 'horizontal') {
-        applyDash(false);
+        let col = applyDashAndColor(false, `pl2_${pl.id}`);
         ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke(); ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"), strokeColor);
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"), col);
       } else if (pl.type === 'frontal') {
-        applyDash(false);
+        let col = applyDashAndColor(false, `pl1_${pl.id}`);
         ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"), strokeColor);
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"), col);
       } else if (pl.type === 'paralelo_lt') {
-        applyDash(false);
+        let col2 = applyDashAndColor(false, `pl2_${pl.id}`);
         ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"), col2);
+
+        let col1 = applyDashAndColor(false, `pl1_${pl.id}`);
         ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"), strokeColor);
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"), strokeColor);
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"), col1);
       } else {
-        applyDash(pl.p2.y >= ltY);
+        let col2 = applyDashAndColor(pl.p2.y >= ltY, `pl2_${pl.id}`);
         ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
-        
-        applyDash(pl.p1.y <= ltY);
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"), col2);
+
+        let col1 = applyDashAndColor(pl.p1.y <= ltY, `pl1_${pl.id}`);
         ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke(); 
-        
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"), col1);
         ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"), strokeColor);
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"), strokeColor);
       }
     });
 
@@ -751,11 +802,10 @@ function View2D({ ex }: { ex: Exercise }) {
     ctx.setLineDash([]);
     
     pts.forEach((p: any) => {
-      const selected = isSelected(p.id);
-      ctx.fillStyle = selected ? "#00d2ff" : "black";
-      ctx.strokeStyle = selected ? "#00d2ff" : "black";
-      
       p.nodes.forEach((n: ExNode) => { 
+        const selected = isSelected(`pt_${n.id}`);
+        ctx.strokeStyle = selected ? "#00d2ff" : "black"; 
+        ctx.fillStyle = ctx.strokeStyle;
         ctx.beginPath(); ctx.lineWidth = selected ? sc(2) : sc(1.5);
         let cs = sc(5);
         ctx.moveTo(n.x, n.y - cs); ctx.lineTo(n.x, n.y + cs); 
@@ -827,7 +877,7 @@ function View2D({ ex }: { ex: Exercise }) {
           let thePt = ex.state.pts.find(p => p.nodes.some(n => n.id === id));
           if(thePt) id = thePt.id;
       }
-      toggleSelection({ exId: ex.id, type, id, label });
+      toggleSelection({ exId: ex.id, type, id, rawId, label });
   };
 
   return (
@@ -840,50 +890,63 @@ function View2D({ ex }: { ex: Exercise }) {
             <Group visible={!isPrinting}>
               {/* LÍNEAS INVISIBLES DE HITBOX PARA RECTAS */}
               {segments.map(seg => (
-                <Line key={`hit_seg_${seg.id}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'recta', seg.id, `Recta ${seg.label.replace(/[12]/g, '')}`)} />
+                <Line key={`hit_seg_${seg.id}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Recta ${seg.label.replace(/[12]/g, '')}`)} />
               ))}
 
               {/* LÍNEAS INVISIBLES DE HITBOX PARA PLANOS */}
               {planes.map(pl => {
-                const hitProps = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, listening: true, onClick: (e:any) => handleEntityClick(e, 'plano', pl.id, `Plano ${pl.name}`) };
-                if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} />;
-                if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} />;
-                if (pl.type === 'paralelo_lt') return <React.Fragment key={`hit_pl_${pl.id}`}><Line points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} /><Line points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} /></React.Fragment>;
+                if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />;
+                if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />;
+                if (pl.type === 'paralelo_lt') return <React.Fragment key={`hit_pl_${pl.id}`}><Line points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} /><Line points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} /></React.Fragment>;
                 return (
                   <React.Fragment key={`hit_pl_${pl.id}`}>
-                    <Line points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} {...hitProps} />
-                    <Line points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} {...hitProps} />
+                    <Line points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />
+                    <Line points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />
                   </React.Fragment>
                 );
               })}
 
-              {/* CÍRCULOS DE AGARRE (NODOS) */}
               <Circle id="sys_lt1" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
               <Circle id="sys_lt2" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
 
               {reqOrigin && <Circle id="sys_origin" x={originX} y={ltY} radius={sc(18)} fill="rgba(255,200,0,0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />}
               
+              {reqRegla && (
+                <React.Fragment>
+                  <Circle id="sys_o1" x={originX} y={b.oY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle id="sys_o2" x={originX} y={b.oY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                </React.Fragment>
+              )}
+
+              {reqPP && (
+                <React.Fragment>
+                  <Circle id="sys_pp" x={ppX} y={ltY} radius={sc(12)} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle id="sys_p1" x={ppX} y={b.pY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle id="sys_p2" x={ppX} y={b.pY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                </React.Fragment>
+              )}
+
               {planes.map(pl => {
-                if (pl.type === 'horizontal') return <Circle key={pl.id} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', pl.id, `Plano ${pl.name}`)} />;
-                if (pl.type === 'frontal') return <Circle key={pl.id} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', pl.id, `Plano ${pl.name}`)} />;
-                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', pl.id, `Plano ${pl.name}`)} /><Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', pl.id, `Plano ${pl.name}`)} /></React.Fragment>;
+                if (pl.type === 'horizontal') return <Circle key={pl.id} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />;
+                if (pl.type === 'frontal') return <Circle key={pl.id} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />;
+                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} /><Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} /></React.Fragment>;
                 return (
                   <React.Fragment key={pl.id}>
-                    <Circle x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragStart={onPushHistory} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', pl.id, `Plano ${pl.name}`)} />
-                    <Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragStart={onPushHistory} onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', pl.id, `Plano ${pl.name}`)} />
-                    <Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragStart={onPushHistory} onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', pl.id, `Plano ${pl.name}`)} />
+                    <Circle x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragStart={onPushHistory} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl_${pl.id}`, `Plano ${pl.name}`)} />
+                    <Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragStart={onPushHistory} onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />
+                    <Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragStart={onPushHistory} onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />
                   </React.Fragment>
                 );
               })}
 
               {segments.map(seg => (
                 <React.Fragment key={seg.id}>
-                  {!seg.isDashed && <><Circle x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', seg.id, `Recta ${seg.label.replace(/[12]/g, '')}`)} />
-                  <Circle x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', seg.id, `Recta ${seg.label.replace(/[12]/g, '')}`)} /></>}
+                  {!seg.isDashed && <><Circle x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${seg.label.replace(/[12]/g, '')}`)} />
+                  <Circle x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${seg.label.replace(/[12]/g, '')}`)} /></>}
                 </React.Fragment>
               ))}
               {pts.map(p => p.nodes.map(n => (
-                <Circle key={n.id} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'punto', n.id, `Punto ${p.name}`)} />
+                <Circle key={n.id} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'punto', `pt_${n.id}`, `Punto ${p.name}`)} />
               )))}
             </Group>
           </Layer>
@@ -899,8 +962,8 @@ function View2D({ ex }: { ex: Exercise }) {
 export default function App() {
   const { 
     exercises, addExercise, removeExercise, addFreeElement, updateBoxSize, saveData, loadData,
-    pageSize, fontFamily, fontSize, setPageConfig, selection, setSelection, past, future, undo, redo,
-    toggleLineStyle, togglePlaneType, updateName, addConstraint, removeConstraint
+    pageSize, fontFamily, fontSize, zoom, setPageConfig, selection, setSelection, past, future, undo, redo,
+    toggleLineStyle, togglePlaneType, updateName, addConstraint, removeConstraint, addAuxLine
   } = useStore();
   
   const [type, setType] = useState('punto_coord');
@@ -967,7 +1030,7 @@ export default function App() {
         .tool-btn.primary:hover { background: #00b8e6; }
         .tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .app-body { display: flex; height: calc(100vh - 60px); overflow: hidden; }
+        .app-body { display: flex; height: calc(100vh - 60px); overflow: hidden; width: 100vw; }
 
         .left-panel { width: 300px; background: #2a2a35; padding: 20px; overflow-y: auto; border-right: 1px solid #1a1a20; flex-shrink: 0; }
         .right-panel { width: 300px; background: #2a2a35; padding: 20px; overflow-y: auto; border-left: 1px solid #1a1a20; flex-shrink: 0; display: flex; flex-direction: column; gap: 15px; }
@@ -992,6 +1055,7 @@ export default function App() {
 
         .workspace { flex: 1; overflow: auto; background-color: #e5e5e5; background-image: linear-gradient(#d5d5d5 1px, transparent 1px), linear-gradient(90deg, #d5d5d5 1px, transparent 1px); background-size: 20px 20px; display: flex; flex-direction: column; align-items: center; padding: 40px; }
         
+        .sheet-container { display: flex; flex-direction: column; align-items: center; transform-origin: top center; }
         .page-sheet { background: white; width: ${PAGE_W}; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 40px; display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
         
         .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
@@ -1004,20 +1068,17 @@ export default function App() {
         
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; word-wrap: break-word; line-height: 1.3; font-family: ${fontFamily}; font-size: ${fontSize}px; text-align: justify; }
         .exercise-data { font-family: ${fontFamily}; font-size: ${fontSize - 1}px; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.3; word-wrap: break-word; text-align: justify; }
-        .btn-mini { background: #e0e0e0; color: black; border: 1px solid #aaa; font-weight: bold; cursor: pointer; border-radius: 3px; font-size: 0.65rem; padding: 2px 6px; }
-        .btn-mini:hover { background: #d0d0d0; }
         
         .side-handle-r { position: absolute; right: -5px; top: 0; bottom: 0; width: 15px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
         .side-handle-b { position: absolute; left: 0; right: 0; bottom: -5px; height: 15px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-b:hover, .side-handle-b:active { background: rgba(0, 210, 255, 0.4); }
 
-        .sel-tag { display: inline-block; background: #1e1e24; border: 1px solid #00d2ff; color: #00d2ff; padding: 2px 8px; border-radius: 12px; font-size: 0.8rem; margin-bottom: 8px; }
-        
         @media print { 
-          body, html, .app-container { background: white; height: auto !important; overflow: visible !important; display: block !important; }
+          body, html, .app-container, .app-body { background: white; height: auto !important; overflow: visible !important; display: block !important; width: auto !important; }
           .no-print { display: none !important; } 
           .workspace { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; background: none; } 
+          .sheet-container { zoom: 1 !important; transform: none !important; }
           
           @page { size: ${pageSize === 'A3' ? 'A3 landscape' : 'A4 portrait'}; margin: 0; }
           .page-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: ${PAGE_W}; height: 297mm; } 
@@ -1028,14 +1089,14 @@ export default function App() {
         }
       `}</style>
       
-      <div className="app-container" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <div className="app-container">
         
         {/* BARRA SUPERIOR */}
         <div className="top-navbar no-print">
             <div className="nav-brand">📐 Editor Diédrico PRO</div>
             <div className="nav-tools">
-                <button className="tool-btn" onClick={undo} disabled={past.length === 0} title="Deshacer (Ctrl+Z)">↩ Deshacer</button>
-                <button className="tool-btn" onClick={redo} disabled={future.length === 0} title="Rehacer (Ctrl+Y)">↪ Rehacer</button>
+                <button className="tool-btn" onClick={undo} disabled={past.length === 0} title="Deshacer">↩ Deshacer</button>
+                <button className="tool-btn" onClick={redo} disabled={future.length === 0} title="Rehacer">↪ Rehacer</button>
                 <div style={{width: '1px', height: '24px', background: '#556', margin: '0 10px'}}></div>
                 <button className="tool-btn" onClick={loadData}>📂 Cargar</button>
                 <button className="tool-btn" onClick={saveData}>💾 Guardar</button>
@@ -1049,7 +1110,7 @@ export default function App() {
             <div className="left-panel no-print">
             
             <div className="panel-section">
-                <div className="panel-title">Lámina</div>
+                <div className="panel-title">Lámina / Vista</div>
                 <div className="input-group">
                     <label>Formato Papel:</label>
                     <select className="cad-select" value={pageSize} onChange={e => setPageConfig({pageSize: e.target.value as 'A4'|'A3'})}>
@@ -1058,7 +1119,11 @@ export default function App() {
                     </select>
                 </div>
                 <div className="input-group">
-                    <label>Tipografía:</label>
+                    <label>Zoom Hoja: {Math.round(zoom * 100)}%</label>
+                    <input className="cad-input" type="range" min="30" max="200" value={zoom * 100} onChange={e => setPageConfig({zoom: Number(e.target.value) / 100})} />
+                </div>
+                <div className="input-group" style={{marginTop:'10px'}}>
+                    <label>Tipografía Textos:</label>
                     <select className="cad-select" value={fontFamily} onChange={e => setPageConfig({fontFamily: e.target.value})}>
                         <option value="'Segoe UI', sans-serif">Segoe UI</option>
                         <option value="Arial, sans-serif">Arial</option>
@@ -1134,7 +1199,7 @@ export default function App() {
 
             {/* ZONA DE TRABAJO (CANVAS) */}
             <div className="workspace">
-            <div className="sheet-container">
+            <div className="sheet-container" style={{ zoom: zoom }}>
                 {paginatedExercises.map((pageExs, pageIdx) => (
                 <div key={pageIdx} className="page-sheet">
                     <div className="page-border">
@@ -1222,9 +1287,9 @@ export default function App() {
                             {ex.dataStr && <div className="exercise-data" contentEditable suppressContentEditableWarning onBlur={e => useStore.getState().updateExerciseText(ex.id, 'dataStr', e.currentTarget.innerText)}>{ex.dataStr}</div>}
                             
                             <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
-                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
-                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
-                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
+                            <button className="tool-btn" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
+                            <button className="tool-btn" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Recta</button>
+                            <button className="tool-btn" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Plano</button>
                             </div>
 
                             <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -1250,7 +1315,7 @@ export default function App() {
                     ) : (
                         <div style={{display: 'flex', flexDirection: 'column', gap: '10px'}}>
                             {selection.map(sel => (
-                                <div key={sel.id} style={{background: '#1e1e24', padding: '10px', borderRadius: '4px', borderLeft: '3px solid #00d2ff'}}>
+                                <div key={sel.rawId} style={{background: '#1e1e24', padding: '10px', borderRadius: '4px', borderLeft: '3px solid #00d2ff'}}>
                                     <div style={{fontWeight: 'bold', fontSize: '0.9rem', color: '#00d2ff', marginBottom: '8px'}}>{sel.label}</div>
                                     <div style={{display: 'flex', gap: '5px'}}>
                                         <button className="tool-btn" style={{flex: 1, padding: '4px'}} onClick={() => updateName(sel.exId, sel.type, sel.id, "")} title="Ocultar letra">🆑 Nombre</button>
@@ -1265,12 +1330,24 @@ export default function App() {
                                 </div>
                             ))}
 
+                            {/* CREACIÓN DE LÍNEAS AUXILIARES LIBRES (Solo 1 elemento seleccionado) */}
+                            {selection.length === 1 && (selection[0].type === 'recta' || selection[0].type === 'plano') && (
+                                <div style={{marginTop: '10px', background: '#3d3d52', padding: '10px', borderRadius: '4px', border: '1px solid #00d2ff'}}>
+                                    <div style={{fontSize: '0.8rem', color: '#00d2ff', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center'}}>AÑADIR AUXILIARES LIBRES</div>
+                                    <div style={{display: 'flex', gap: '5px'}}>
+                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => addAuxLine(selection[0].exId, selection[0].rawId, 'parallel')}>+ // Paralela</button>
+                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => addAuxLine(selection[0].exId, selection[0].rawId, 'perp')}>+ ⟂ Perpend.</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* VÍNCULOS GEOMÉTRICOS (2 elementos seleccionados) */}
                             {selection.length === 2 && (selection[0].type === 'recta' || selection[0].type === 'plano') && (selection[1].type === 'recta' || selection[1].type === 'plano') && selection[0].exId === selection[1].exId && (
                                 <div style={{marginTop: '10px', background: '#3d3d52', padding: '10px', borderRadius: '4px', border: '1px solid #eccc68'}}>
-                                    <div style={{fontSize: '0.8rem', color: '#eccc68', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center'}}>RESTRICCIONES GEOMÉTRICAS</div>
+                                    <div style={{fontSize: '0.8rem', color: '#eccc68', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center'}}>VINCULAR GEOMETRÍA</div>
                                     <div style={{display: 'flex', gap: '5px'}}>
-                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => addConstraint(selection[0].exId, 'parallel', selection[0].id, selection[1].id)}>// Paralelas</button>
-                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => addConstraint(selection[0].exId, 'perp', selection[0].id, selection[1].id)}>⟂ Perpendic.</button>
+                                        <button className="action-btn warning" style={{margin: 0, padding: '6px'}} onClick={() => addConstraint(selection[0].exId, 'parallel', selection[0].id, selection[1].id)}>🔗 // Paralelas</button>
+                                        <button className="action-btn warning" style={{margin: 0, padding: '6px'}} onClick={() => addConstraint(selection[0].exId, 'perp', selection[0].id, selection[1].id)}>🔗 ⟂ Perpend.</button>
                                     </div>
                                 </div>
                             )}
@@ -1289,13 +1366,13 @@ export default function App() {
                 {/* Lista de restricciones activas para el ejercicio actual si hay elementos seleccionados */}
                 {selection.length > 0 && exercises.find(e => e.id === selection[0].exId)?.state.constraints.length! > 0 && (
                      <div className="panel-section">
-                         <div className="panel-title">Vínculos Activos</div>
+                         <div className="panel-title">Vínculos Matemáticos Activos</div>
                          {exercises.find(e => e.id === selection[0].exId)?.state.constraints.map(c => {
                              const isParallel = c.type === 'parallel';
                              return (
-                                 <div key={c.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e1e24', padding: '6px 10px', borderRadius: '4px', marginBottom: '5px', fontSize: '0.8rem'}}>
-                                     <span style={{color: '#ddd'}}>{isParallel ? '// Paralelismo' : '⟂ Perpendicular'}</span>
-                                     <button style={{background: 'transparent', border: 'none', color: '#ff4757', cursor: 'pointer', fontWeight: 'bold'}} onClick={() => removeConstraint(selection[0].exId, c.id)}>✕</button>
+                                 <div key={c.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e1e24', padding: '8px 10px', borderRadius: '4px', marginBottom: '5px', fontSize: '0.85rem', borderLeft: '3px solid #eccc68'}}>
+                                     <span style={{color: '#ddd'}}>{isParallel ? '🔗 Paralelismo' : '🔗 Perpendicularidad'}</span>
+                                     <button style={{background: 'transparent', border: 'none', color: '#ff4757', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem'}} onClick={() => removeConstraint(selection[0].exId, c.id)}>✕</button>
                                  </div>
                              );
                          })}
@@ -1306,7 +1383,6 @@ export default function App() {
                 {selection.length > 0 && (
                     <button className="action-btn danger" style={{marginTop: 'auto'}} onClick={() => {
                         removeExercise(selection[0].exId);
-                        setSelection([]);
                     }}>Eliminar Ejercicio Completo</button>
                 )}
             </div>
