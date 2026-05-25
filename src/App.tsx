@@ -961,7 +961,7 @@ export default function App() {
       let hVal = parseInt(ex.h) || 136;
       let wVal = parseFloat(ex.w) || 50;
 
-      const MAX_H = pages.length === 0 ? 275 : 285; 
+      const MAX_H = 275; 
 
       if (rowW + wVal <= 101) { 
         rowW += wVal;
@@ -1132,18 +1132,16 @@ export default function App() {
             {paginatedExercises.map((pageExs, pageIdx) => (
               <div key={pageIdx} className="a4-sheet">
                 <div className="page-border">
-                  {pageIdx === 0 && (
-                    <div className="cajetin">
-                      <div className="cajetin-top">
-                        <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>Colegio Nuestra Señora de los Infantes</span>
-                        <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>1º BACHILLERATO</span>
-                      </div>
-                      <div className="cajetin-bottom">
-                        <span style={{flex: 1, display:'flex', alignItems:'flex-end', whiteSpace:'nowrap'}}>Nombre: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
-                        <span style={{width: '30%', display:'flex', alignItems:'flex-end', marginLeft:'20px', whiteSpace:'nowrap'}}>Curso: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
-                      </div>
+                  <div className="cajetin">
+                    <div className="cajetin-top">
+                      <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>Colegio Nuestra Señora de los Infantes</span>
+                      <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>1º BACHILLERATO</span>
                     </div>
-                  )}
+                    <div className="cajetin-bottom">
+                      <span style={{flex: 1, display:'flex', alignItems:'flex-end', whiteSpace:'nowrap'}}>Nombre: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
+                      <span style={{width: '30%', display:'flex', alignItems:'flex-end', marginLeft:'20px', whiteSpace:'nowrap'}}>Curso: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
+                    </div>
+                  </div>
 
                   <div className="exercises-grid">
                     {pageExs.map((ex) => (
