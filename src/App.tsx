@@ -29,6 +29,7 @@ interface CadStore {
   updatePlaneEndpoint: (exId: string, planeId: string, traceNum: 1|2, newX: number, newY: number) => void;
   togglePlaneType: (exId: string, planeId: string) => void;
   toggleLineStyle: (exId: string, elemType: 'recta' | 'plano', elemId: string) => void;
+  addAuxLine: (exId: string, rawId: string, mode: 'parallel' | 'perp') => void;
   updateSegment: (exId: string, segId: string, pointIndex: 1|2, newX: number, newY: number) => void;
   updateSystem: (exId: string, target: string, valX: number, valY: number) => void;
   addFreeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano') => void;
@@ -381,6 +382,61 @@ export const useStore = create<CadStore>()((set, get) => ({
         s.segments = s.segments.map(seg => seg.id === elemId ? { ...seg, customStyle: nextStyle(seg.customStyle) } : seg);
       } else if (elemType === 'plano') {
         s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nextStyle(pl.customStyle) } : pl);
+      }
+      return { ...ex, state: s };
+    })
+  })),
+
+  addAuxLine: (exId, rawId, mode) => set((state) => ({
+    exercises: state.exercises.map(ex => {
+      if (ex.id !== exId) return ex;
+      let s = { ...ex.state };
+      let p1 = null, p2 = null;
+      let idParts = rawId.split('_');
+      let id = idParts[1];
+
+      if (rawId.includes('seg')) {
+          let seg = s.segments.find(x => x.id === id);
+          if (seg) { p1 = seg.p1; p2 = seg.p2; }
+      } else if (rawId.includes('pl')) {
+          let pl = s.planes.find(x => x.id === id);
+          if (pl) {
+              let isTrace1 = rawId.includes('1');
+              if (pl.type === 'paralelo_lt') {
+                  p1 = {x: 0, y: isTrace1 ? pl.p1.y : pl.p2.y};
+                  p2 = {x: 800, y: isTrace1 ? pl.p1.y : pl.p2.y};
+              } else if (pl.type === 'horizontal') {
+                  p1 = {x: 0, y: pl.p2.y}; p2 = {x: 800, y: pl.p2.y};
+              } else if (pl.type === 'frontal') {
+                  p1 = {x: 0, y: pl.p1.y}; p2 = {x: 800, y: pl.p1.y};
+              } else {
+                  p1 = {x: pl.vX, y: s.ltY};
+                  p2 = isTrace1 ? pl.p1 : pl.p2;
+              }
+          }
+      }
+
+      if (p1 && p2) {
+          let cx = (p1.x + p2.x)/2 + 30; 
+          let cy = (p1.y + p2.y)/2 - 30; 
+          let dx = p2.x - p1.x; let dy = p2.y - p1.y;
+          let len = Math.sqrt(dx*dx + dy*dy) || 1;
+          let ux = dx/len; let uy = dy/len;
+          
+          let nx1, ny1, nx2, ny2;
+          let lineLen = 150;
+          
+          if (mode === 'parallel') {
+              nx1 = cx - ux * lineLen/2; ny1 = cy - uy * lineLen/2;
+              nx2 = cx + ux * lineLen/2; ny2 = cy + uy * lineLen/2;
+          } else {
+              nx1 = cx - (-uy) * lineLen/2; ny1 = cy - ux * lineLen/2;
+              nx2 = cx + (-uy) * lineLen/2; ny2 = cy + ux * lineLen/2;
+          }
+          
+          s.segments = [...s.segments, {
+             id: uid(), label: '', p1: {x: nx1, y: ny1}, p2: {x: nx2, y: ny2}, customStyle: 'dashed'
+          }];
       }
       return { ...ex, state: s };
     })
@@ -913,6 +969,30 @@ function View2D({ ex }: { ex: Exercise }) {
                   </div>
                 )}
               </div>
+              
+              {!isSys && isLineOrPlane && (
+                 <div style={{ display: 'flex', gap: '4px', marginTop: '4px' }}>
+                    <div style={{flex: 1, padding: '6px 10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.8em', textAlign:'center'}}
+                         onMouseEnter={e => e.currentTarget.style.background = '#00d2ff'}
+                         onMouseLeave={e => e.currentTarget.style.background = '#363654'}
+                         onClick={() => {
+                            useStore.getState().addAuxLine(ex.id, it.id, 'parallel');
+                            setContextMenu(null);
+                         }} title="Añadir línea auxiliar paralela">
+                        // Paralela
+                    </div>
+                    <div style={{flex: 1, padding: '6px 10px', cursor: 'pointer', color: 'white', background: '#363654', borderRadius: '3px', fontSize: '0.8em', textAlign:'center'}}
+                         onMouseEnter={e => e.currentTarget.style.background = '#00d2ff'}
+                         onMouseLeave={e => e.currentTarget.style.background = '#363654'}
+                         onClick={() => {
+                            useStore.getState().addAuxLine(ex.id, it.id, 'perp');
+                            setContextMenu(null);
+                         }} title="Añadir línea auxiliar perpendicular">
+                        ⟂ Perpend.
+                    </div>
+                 </div>
+              )}
+              
               {contextMenu.items.some(i => i.id?.startsWith('pl') && i.id.split('_')[1] === it.id.split('_')[1]) && (
                  <div style={{padding: '6px 10px', cursor: 'pointer', color: 'black', background: '#eccc68', marginTop: '4px', borderRadius: '3px', fontSize: '0.8em', fontWeight: 'bold', textAlign: 'center'}}
                       onClick={() => {
@@ -1256,13 +1336,11 @@ export default function App() {
 
                         <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
                         
-                        {/* ENUNCIADO AUTOGUARDABLE Y JUSTIFICADO */}
                         <div className="exercise-title" style={{ paddingRight: '30px', display: 'flex', gap: '4px' }}>
                           <span contentEditable={false}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b></span>
                           <span contentEditable suppressContentEditableWarning style={{ flex: 1, outline: 'none' }} onBlur={e => useStore.getState().updateExerciseText(ex.id, 'title', e.currentTarget.innerText)}>{ex.title}</span>
                         </div>
                         
-                        {/* DATOS AUTOGUARDABLES Y JUSTIFICADOS */}
                         {ex.dataStr && <div className="exercise-data" contentEditable suppressContentEditableWarning onBlur={e => useStore.getState().updateExerciseText(ex.id, 'dataStr', e.currentTarget.innerText)}>{ex.dataStr}</div>}
                         
                         <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
