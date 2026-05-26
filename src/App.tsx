@@ -85,10 +85,11 @@ const enforceConstraints = (s: Exercise['state'], triggerId: string) => {
     
     const getSeg = (id: string) => s.segments.find(sg => sg.id === id);
     const getAngle = (seg: ExSegment) => Math.atan2(seg.p2.y - seg.p1.y, seg.p2.x - seg.p1.x);
+    const constraints = s.constraints || [];
 
     while (changed && iterations < 5) {
         changed = false;
-        s.constraints.forEach(c => {
+        constraints.forEach(c => {
             let seg1 = getSeg(c.el1);
             let seg2 = getSeg(c.el2);
             if (!seg1 || !seg2) return;
@@ -114,8 +115,15 @@ const enforceConstraints = (s: Exercise['state'], triggerId: string) => {
         });
         iterations++;
     }
+    s.constraints = constraints;
     return s;
 };
+
+// Función auxiliar segura para grabar el estado histórico sin causar bucles de React
+const saveHistory = (state: CadStore) => ({
+    past: [...state.past, JSON.parse(JSON.stringify(state.exercises))],
+    future: []
+});
 
 export const useStore = create<CadStore>()((set, get) => ({
   exercises: initialExercises,
@@ -137,7 +145,7 @@ export const useStore = create<CadStore>()((set, get) => ({
   setPageConfig: (config) => set((state) => ({ ...state, ...config })),
   setPrinting: (val) => set({ isPrinting: val }),
 
-  pushHistory: () => set((state) => ({ past: [...state.past, JSON.parse(JSON.stringify(state.exercises))], future: [] })),
+  pushHistory: () => set((state) => saveHistory(state)),
   undo: () => set((state) => {
       if (state.past.length === 0) return state;
       const prev = state.past[state.past.length - 1];
@@ -169,7 +177,6 @@ export const useStore = create<CadStore>()((set, get) => ({
   },
 
   addExercise: (opts) => set((state) => {
-    state.pushHistory();
     const originX = 400; const ltY = 250;
     let planes: ExPlane[] = []; let segments: ExSegment[] = []; let pts: any[] = [];
     let title = "Ejercicio"; let dataStr = ""; let w = "50%"; let h = "136mm";
@@ -392,15 +399,15 @@ export const useStore = create<CadStore>()((set, get) => ({
       id: uid(), type: t, title, w, h, dataStr,
       state: { ltY, originX, ppX: 750, reqRegla: opts.reqRegla, reqPP: opts.reqPP, reqOrigin: opts.reqOrigin, planes, segments, pts, bounds: { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 }, constraints: [] }
     };
-    return { exercises: [...state.exercises, newEx] };
+    return { ...saveHistory(state), exercises: [...state.exercises, newEx] };
   }),
 
-  removeExercise: (id) => set((state) => { state.pushHistory(); return { exercises: state.exercises.filter(e => e.id !== id), selection: [] }; }),
-  updateBoxSize: (id, w, h) => set((state) => { state.pushHistory(); return { exercises: state.exercises.map(ex => ex.id === id ? { ...ex, w, h } : ex) }; }),
+  removeExercise: (id) => set((state) => ({ ...saveHistory(state), exercises: state.exercises.filter(e => e.id !== id), selection: [] })),
+  updateBoxSize: (id, w, h) => set((state) => ({ ...saveHistory(state), exercises: state.exercises.map(ex => ex.id === id ? { ...ex, w, h } : ex) })),
 
-  addFreeElement: (exId, elemType) => set((state) => {
-    state.pushHistory();
-    return { exercises: state.exercises.map(ex => {
+  addFreeElement: (exId, elemType) => set((state) => ({
+    ...saveHistory(state),
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state }; let ox = s.originX; let oy = s.ltY;
       if (elemType === 'punto') {
@@ -415,62 +422,62 @@ export const useStore = create<CadStore>()((set, get) => ({
           s.planes = [...s.planes, { id:uid(), name: nextL, type:'oblicuo', vX:ox-70, p1:{x:ox+100, y:oy+150}, p2:{x:ox+100, y:oy-150} }];
       }
       return { ...ex, state: s };
-    })};
-  }),
+    })
+  })),
 
-  removeElement: (exId, elemType, elemId) => set((state) => {
-    state.pushHistory();
-    return { exercises: state.exercises.map(ex => {
+  removeElement: (exId, elemType, elemId) => set((state) => ({
+    ...saveHistory(state),
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
       if (elemType === 'punto') s.pts = s.pts.filter(p => p.id !== elemId && !p.nodes.some(n=>n.id===elemId));
       else if (elemType === 'recta') s.segments = s.segments.filter(sg => sg.id !== elemId);
       else if (elemType === 'plano') s.planes = s.planes.filter(pl => pl.id !== elemId);
-      s.constraints = s.constraints.filter(c => c.el1 !== elemId && c.el2 !== elemId);
+      s.constraints = (s.constraints || []).filter(c => c.el1 !== elemId && c.el2 !== elemId);
       return { ...ex, state: s };
-    })};
-  }),
+    })
+  })),
 
-  updateName: (exId, elemType, elemId, newName) => set((state) => {
-    state.pushHistory();
-    return { exercises: state.exercises.map(ex => {
+  updateName: (exId, elemType, elemId, newName) => set((state) => ({
+    ...saveHistory(state),
+    exercises: state.exercises.map(ex => {
       if(ex.id !== exId) return ex;
       let s = {...ex.state};
       if(elemType === 'punto') s.pts = s.pts.map(p => p.id === elemId ? {...p, name: newName} : p);
       else if(elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? {...seg, label: newName} : seg);
       else if(elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
       return {...ex, state: s};
-    })};
-  }),
+    })
+  })),
 
-  updateExerciseText: (exId, field, text) => set((state) => {
-    state.pushHistory();
-    return { exercises: state.exercises.map(ex => ex.id !== exId ? ex : { ...ex, [field]: text })};
-  }),
+  updateExerciseText: (exId, field, text) => set((state) => ({
+    ...saveHistory(state),
+    exercises: state.exercises.map(ex => ex.id !== exId ? ex : { ...ex, [field]: text })
+  })),
 
-  togglePlaneType: (exId, planeId) => set((state) => {
-    state.pushHistory();
-    return { exercises: state.exercises.map(ex => {
+  togglePlaneType: (exId, planeId) => set((state) => ({
+    ...saveHistory(state),
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => pl.id !== planeId ? pl : { ...pl, type: pl.type === 'paralelo_lt' ? 'oblicuo' : 'paralelo_lt' })}};
-    })};
-  }),
+    })
+  })),
 
-  toggleLineStyle: (exId, elemType, elemId) => set((state) => {
-    state.pushHistory();
-    return { exercises: state.exercises.map(ex => {
+  toggleLineStyle: (exId, elemType, elemId) => set((state) => ({
+    ...saveHistory(state),
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
       const nextStyle = (current?: string) => current === 'solid' ? 'dashed' : current === 'dashed' ? undefined : 'solid';
       if (elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? { ...seg, customStyle: nextStyle(seg.customStyle) } : seg);
       else if (elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nextStyle(pl.customStyle) } : pl);
       return { ...ex, state: s };
-    })};
-  }),
+    })
+  })),
 
-  addAuxLine: (exId, rawId, mode) => set((state) => {
-      state.pushHistory();
-      return { exercises: state.exercises.map(ex => {
+  addAuxLine: (exId, rawId, mode) => set((state) => ({
+      ...saveHistory(state),
+      exercises: state.exercises.map(ex => {
         if (ex.id !== exId) return ex;
         let s = { ...ex.state };
         let p1 = null, p2 = null;
@@ -515,28 +522,29 @@ export const useStore = create<CadStore>()((set, get) => ({
             s.segments = [...s.segments, { id: uid(), label: '', p1: {x: nx1, y: ny1}, p2: {x: nx2, y: ny2}, customStyle: 'dashed' }];
         }
         return { ...ex, state: s };
-      })};
-  }),
+      })
+  })),
 
-  addConstraint: (exId, type, el1, el2) => set((state) => {
-      state.pushHistory();
-      return { exercises: state.exercises.map(ex => {
+  addConstraint: (exId, type, el1, el2) => set((state) => ({
+      ...saveHistory(state),
+      exercises: state.exercises.map(ex => {
           if (ex.id !== exId) return ex;
           let s = { ...ex.state };
-          s.constraints = s.constraints.filter(c => c.el2 !== el2 && c.el1 !== el2);
+          s.constraints = (s.constraints || []).filter(c => c.el2 !== el2 && c.el1 !== el2);
           s.constraints.push({ id: uid(), type, el1, el2 });
           s = enforceConstraints(s, 'all');
           return { ...ex, state: s };
-      }), selection: [] };
-  }),
+      }), 
+      selection: [] 
+  })),
 
-  removeConstraint: (exId, constraintId) => set((state) => {
-      state.pushHistory();
-      return { exercises: state.exercises.map(ex => {
+  removeConstraint: (exId, constraintId) => set((state) => ({
+      ...saveHistory(state),
+      exercises: state.exercises.map(ex => {
           if (ex.id !== exId) return ex;
-          return { ...ex, state: { ...ex.state, constraints: ex.state.constraints.filter(c => c.id !== constraintId) } };
-      })};
-  }),
+          return { ...ex, state: { ...ex.state, constraints: (ex.state.constraints || []).filter(c => c.id !== constraintId) } };
+      })
+  })),
 
   updateNode: (exId, ptId, nodeId, newX, newY) => set((state) => ({
     exercises: state.exercises.map(ex => {
@@ -620,7 +628,7 @@ useStore.subscribe((state) => { localStorage.setItem('diedrico_autosave', JSON.s
 // 2. EL MOTOR DE DIBUJO CAD (KONVA)
 // ==========================================
 function View2D({ ex }: { ex: Exercise }) {
-  const { updateNode, updatePlane, updatePlaneEndpoint, updateSegment, updateSystem, toggleSelection, selection, isPrinting } = useStore();
+  const { updateNode, updatePlane, updatePlaneEndpoint, updateSegment, updateSystem, toggleSelection, selection, isPrinting, pushHistory } = useStore();
   const { ltY, originX, ppX, reqRegla, reqPP, reqOrigin, planes, pts, segments } = ex.state;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -641,8 +649,6 @@ function View2D({ ex }: { ex: Exercise }) {
   const handleOut = (e: any) => { e.target.scale({x:1, y:1}); document.body.style.cursor='default'; };
   const handleHoverLine = () => { document.body.style.cursor='pointer'; };
   const handleOutLine = () => { document.body.style.cursor='default'; };
-
-  const onPushHistory = () => useStore.getState().pushHistory();
 
   const isSelected = (rawId: string) => selection.some(s => s.rawId === rawId);
 
@@ -754,7 +760,7 @@ function View2D({ ex }: { ex: Exercise }) {
 
     planes.forEach((pl: ExPlane) => {
       const applyDashAndColor = (isAutoDashed: boolean, traceRawId: string) => {
-          const selected = isSelected(traceRawId);
+          const selected = isSelected(traceRawId) || isSelected(`pl_${pl.id}`);
           ctx.strokeStyle = selected ? "#00d2ff" : "black"; 
           ctx.lineWidth = selected ? sc(3) : sc(2.2);
           
@@ -895,58 +901,59 @@ function View2D({ ex }: { ex: Exercise }) {
 
               {/* LÍNEAS INVISIBLES DE HITBOX PARA PLANOS */}
               {planes.map(pl => {
-                if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />;
-                if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />;
-                if (pl.type === 'paralelo_lt') return <React.Fragment key={`hit_pl_${pl.id}`}><Line points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} /><Line points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} /></React.Fragment>;
+                const hitProps = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, listening: true, onClick: (e:any) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Plano ${pl.name}`) };
+                if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />;
+                if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />;
+                if (pl.type === 'paralelo_lt') return <React.Fragment key={`hit_pl_${pl.id}`}><Line points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} /><Line points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} /></React.Fragment>;
                 return (
                   <React.Fragment key={`hit_pl_${pl.id}`}>
-                    <Line points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />
-                    <Line points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />
+                    <Line points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} {...hitProps} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />
+                    <Line points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} {...hitProps} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />
                   </React.Fragment>
                 );
               })}
 
-              <Circle id="sys_lt1" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
-              <Circle id="sys_lt2" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+              <Circle id="sys_lt1" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={pushHistory} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+              <Circle id="sys_lt2" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={pushHistory} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
 
-              {reqOrigin && <Circle id="sys_origin" x={originX} y={ltY} radius={sc(18)} fill="rgba(255,200,0,0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />}
+              {reqOrigin && <Circle id="sys_origin" x={originX} y={ltY} radius={sc(18)} fill="rgba(255,200,0,0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />}
               
               {reqRegla && (
                 <React.Fragment>
-                  <Circle id="sys_o1" x={originX} y={b.oY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
-                  <Circle id="sys_o2" x={originX} y={b.oY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle id="sys_o1" x={originX} y={b.oY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragStart={pushHistory} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle id="sys_o2" x={originX} y={b.oY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragStart={pushHistory} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
                 </React.Fragment>
               )}
 
               {reqPP && (
                 <React.Fragment>
-                  <Circle id="sys_pp" x={ppX} y={ltY} radius={sc(12)} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
-                  <Circle id="sys_p1" x={ppX} y={b.pY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
-                  <Circle id="sys_p2" x={ppX} y={b.pY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragStart={onPushHistory} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle id="sys_pp" x={ppX} y={ltY} radius={sc(12)} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragStart={pushHistory} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle id="sys_p1" x={ppX} y={b.pY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragStart={pushHistory} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle id="sys_p2" x={ppX} y={b.pY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragStart={pushHistory} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
                 </React.Fragment>
               )}
 
               {planes.map(pl => {
-                if (pl.type === 'horizontal') return <Circle key={pl.id} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />;
-                if (pl.type === 'frontal') return <Circle key={pl.id} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />;
-                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} /><Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={onPushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} /></React.Fragment>;
+                if (pl.type === 'horizontal') return <Circle key={pl.id} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={pushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />;
+                if (pl.type === 'frontal') return <Circle key={pl.id} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={pushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />;
+                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={pushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} /><Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={pushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} /></React.Fragment>;
                 return (
                   <React.Fragment key={pl.id}>
-                    <Circle x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragStart={onPushHistory} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl_${pl.id}`, `Plano ${pl.name}`)} />
-                    <Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragStart={onPushHistory} onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />
-                    <Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragStart={onPushHistory} onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />
+                    <Circle x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragStart={pushHistory} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl_${pl.id}`, `Plano ${pl.name}`)} />
+                    <Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragStart={pushHistory} onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />
+                    <Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragStart={pushHistory} onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />
                   </React.Fragment>
                 );
               })}
 
               {segments.map(seg => (
                 <React.Fragment key={seg.id}>
-                  {!seg.isDashed && <><Circle x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${seg.label.replace(/[12]/g, '')}`)} />
-                  <Circle x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${seg.label.replace(/[12]/g, '')}`)} /></>}
+                  {!seg.isDashed && <><Circle x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${seg.label.replace(/[12]/g, '')}`)} />
+                  <Circle x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${seg.label.replace(/[12]/g, '')}`)} /></>}
                 </React.Fragment>
               ))}
               {pts.map(p => p.nodes.map(n => (
-                <Circle key={n.id} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragStart={onPushHistory} onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'punto', `pt_${n.id}`, `Punto ${p.name}`)} />
+                <Circle key={n.id} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'punto', `pt_${n.id}`, `Punto ${p.name}`)} />
               )))}
             </Group>
           </Layer>
@@ -1019,7 +1026,7 @@ export default function App() {
   return (
     <>
       <style>{`
-        body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background-color: #1e1e24; color: #e5e5e5; }
+        body { margin: 0; font-family: 'Segoe UI', system-ui, sans-serif; background-color: #1e1e24; color: #e5e5e5; overflow: hidden; }
         
         .top-navbar { height: 60px; background: #252530; border-bottom: 1px solid #333; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); z-index: 100; position: relative; }
         .nav-brand { font-size: 1.2rem; font-weight: bold; color: #00d2ff; text-transform: uppercase; letter-spacing: 1px; display: flex; align-items: center; gap: 10px;}
@@ -1030,10 +1037,10 @@ export default function App() {
         .tool-btn.primary:hover { background: #00b8e6; }
         .tool-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .app-body { display: flex; height: calc(100vh - 60px); overflow: hidden; width: 100vw; }
+        .app-body { display: flex; height: calc(100vh - 60px); width: 100vw; overflow: hidden; }
 
-        .left-panel { width: 300px; background: #2a2a35; padding: 20px; overflow-y: auto; border-right: 1px solid #1a1a20; flex-shrink: 0; }
-        .right-panel { width: 300px; background: #2a2a35; padding: 20px; overflow-y: auto; border-left: 1px solid #1a1a20; flex-shrink: 0; display: flex; flex-direction: column; gap: 15px; }
+        .left-panel { width: 300px; background: #2a2a35; padding: 20px; overflow-y: auto; border-right: 1px solid #1a1a20; flex-shrink: 0; box-shadow: 2px 0 10px rgba(0,0,0,0.5); z-index: 50; }
+        .right-panel { width: 300px; background: #2a2a35; padding: 20px; overflow-y: auto; border-left: 1px solid #1a1a20; flex-shrink: 0; display: flex; flex-direction: column; gap: 15px; box-shadow: -2px 0 10px rgba(0,0,0,0.5); z-index: 50; }
 
         .panel-section { background: #333344; padding: 15px; border-radius: 6px; margin-bottom: 15px; border: 1px solid #3e3e50; }
         .panel-title { font-size: 0.75rem; color: #8899aa; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; font-weight: bold; }
@@ -1055,8 +1062,8 @@ export default function App() {
 
         .workspace { flex: 1; overflow: auto; background-color: #e5e5e5; background-image: linear-gradient(#d5d5d5 1px, transparent 1px), linear-gradient(90deg, #d5d5d5 1px, transparent 1px); background-size: 20px 20px; display: flex; flex-direction: column; align-items: center; padding: 40px; }
         
-        .sheet-container { display: flex; flex-direction: column; align-items: center; transform-origin: top center; }
-        .page-sheet { background: white; width: ${PAGE_W}; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 40px; display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+        .sheet-container { display: flex; flex-direction: column; align-items: center; transform-origin: top center; transition: zoom 0.1s ease; }
+        .page-sheet { background: white; width: ${PAGE_W}; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 40px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
         
         .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
         .cajetin { width: ${pageSize === 'A3' ? '204mm' : '100%'}; border-right: ${pageSize === 'A3' ? '2px solid black' : 'none'}; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; transition: width 0.3s ease; }
@@ -1068,6 +1075,8 @@ export default function App() {
         
         .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; word-wrap: break-word; line-height: 1.3; font-family: ${fontFamily}; font-size: ${fontSize}px; text-align: justify; }
         .exercise-data { font-family: ${fontFamily}; font-size: ${fontSize - 1}px; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.3; word-wrap: break-word; text-align: justify; }
+        .btn-mini { background: #e0e0e0; color: black; border: 1px solid #aaa; font-weight: bold; cursor: pointer; border-radius: 3px; font-size: 0.65rem; padding: 2px 6px; }
+        .btn-mini:hover { background: #d0d0d0; }
         
         .side-handle-r { position: absolute; right: -5px; top: 0; bottom: 0; width: 15px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-r:hover, .side-handle-r:active { background: rgba(0, 210, 255, 0.4); }
@@ -1287,9 +1296,9 @@ export default function App() {
                             {ex.dataStr && <div className="exercise-data" contentEditable suppressContentEditableWarning onBlur={e => useStore.getState().updateExerciseText(ex.id, 'dataStr', e.currentTarget.innerText)}>{ex.dataStr}</div>}
                             
                             <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
-                            <button className="tool-btn" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
-                            <button className="tool-btn" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Recta</button>
-                            <button className="tool-btn" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Plano</button>
+                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
+                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
+                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
                             </div>
 
                             <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -1335,8 +1344,8 @@ export default function App() {
                                 <div style={{marginTop: '10px', background: '#3d3d52', padding: '10px', borderRadius: '4px', border: '1px solid #00d2ff'}}>
                                     <div style={{fontSize: '0.8rem', color: '#00d2ff', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center'}}>AÑADIR AUXILIARES LIBRES</div>
                                     <div style={{display: 'flex', gap: '5px'}}>
-                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => addAuxLine(selection[0].exId, selection[0].rawId, 'parallel')}>+ // Paralela</button>
-                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => addAuxLine(selection[0].exId, selection[0].rawId, 'perp')}>+ ⟂ Perpend.</button>
+                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => { addAuxLine(selection[0].exId, selection[0].rawId, 'parallel'); setSelection([]); }}>+ // Paralela</button>
+                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => { addAuxLine(selection[0].exId, selection[0].rawId, 'perp'); setSelection([]); }}>+ ⟂ Perpend.</button>
                                     </div>
                                 </div>
                             )}
@@ -1364,10 +1373,10 @@ export default function App() {
                 </div>
 
                 {/* Lista de restricciones activas para el ejercicio actual si hay elementos seleccionados */}
-                {selection.length > 0 && exercises.find(e => e.id === selection[0].exId)?.state.constraints.length! > 0 && (
+                {selection.length > 0 && (exercises.find(e => e.id === selection[0].exId)?.state.constraints || []).length > 0 && (
                      <div className="panel-section">
                          <div className="panel-title">Vínculos Matemáticos Activos</div>
-                         {exercises.find(e => e.id === selection[0].exId)?.state.constraints.map(c => {
+                         {(exercises.find(e => e.id === selection[0].exId)?.state.constraints || []).map(c => {
                              const isParallel = c.type === 'parallel';
                              return (
                                  <div key={c.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e1e24', padding: '8px 10px', borderRadius: '4px', marginBottom: '5px', fontSize: '0.85rem', borderLeft: '3px solid #eccc68'}}>
