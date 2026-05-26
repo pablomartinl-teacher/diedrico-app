@@ -76,28 +76,43 @@ function applyQuad(val: number, quad: string, isZ: boolean) {
   return val;
 }
 
-// ESCUDO ANTI-CORRUPCIÓN: Sanea los datos antiguos para evitar la pantalla blanca
-const savedData = localStorage.getItem('diedrico_autosave');
+// ESCUDO ANTI-CORRUPCIÓN: Sanea la memoria antigua para evitar el WSOD (Pantalla Blanca)
 let initialExercises: Exercise[] = [];
 try {
+  const savedData = localStorage.getItem('diedrico_autosave');
   if (savedData) {
     const parsed = JSON.parse(savedData);
     if (Array.isArray(parsed)) {
-        initialExercises = parsed.map(ex => ({
-            ...ex,
-            state: {
-                ltY: 250, originX: 400, ppX: 750, reqRegla: false, reqPP: false, reqOrigin: false,
-                ...(ex.state || {}),
-                planes: ex.state?.planes || [],
-                segments: ex.state?.segments || [],
-                pts: ex.state?.pts || [],
-                constraints: ex.state?.constraints || [],
-                bounds: { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400, ...(ex.state?.bounds || {}) }
-            }
-        }));
+        initialExercises = parsed.map(ex => {
+            if (!ex || typeof ex !== 'object') return null;
+            const st = ex.state || {};
+            return {
+                id: ex.id || uid(),
+                type: ex.type || 'punto_coord',
+                title: ex.title || 'Ejercicio',
+                w: ex.w || '50%',
+                h: ex.h || '136mm',
+                dataStr: ex.dataStr || '',
+                state: {
+                    ltY: st.ltY ?? 250,
+                    originX: st.originX ?? 400,
+                    ppX: st.ppX ?? 750,
+                    reqRegla: !!st.reqRegla,
+                    reqPP: !!st.reqPP,
+                    reqOrigin: !!st.reqOrigin,
+                    // Filtramos agresivamente cualquier línea o plano que tenga coordenadas rotas
+                    planes: (Array.isArray(st.planes) ? st.planes : []).filter((pl: any) => pl && pl.p1 && pl.p2 && pl.p1.x !== undefined),
+                    segments: (Array.isArray(st.segments) ? st.segments : []).filter((sg: any) => sg && sg.p1 && sg.p2 && sg.p1.x !== undefined),
+                    pts: (Array.isArray(st.pts) ? st.pts : []).filter((pt: any) => pt && Array.isArray(pt.nodes)),
+                    constraints: Array.isArray(st.constraints) ? st.constraints : [],
+                    bounds: { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400, ...(st.bounds || {}) }
+                }
+            };
+        }).filter(Boolean) as Exercise[];
     }
   }
 } catch (e) {
+  console.error("Memoria antigua purgada automáticamente para evitar fallos.", e);
   localStorage.removeItem('diedrico_autosave');
 }
 
@@ -114,7 +129,7 @@ const enforceConstraints = (s: Exercise['state'], triggerId: string) => {
         constraints.forEach(c => {
             let seg1 = getSeg(c.el1);
             let seg2 = getSeg(c.el2);
-            if (!seg1 || !seg2) return;
+            if (!seg1 || !seg2 || !seg1.p1 || !seg2.p1) return;
 
             let sourceSeg, targetSeg;
             if (c.el1 === triggerId || triggerId === 'all') { sourceSeg = seg1; targetSeg = seg2; }
@@ -141,6 +156,7 @@ const enforceConstraints = (s: Exercise['state'], triggerId: string) => {
     return s;
 };
 
+// Función segura para inyectar historial sin causar bucle de renders
 const getHistoryState = (state: CadStore) => ({
     past: [...state.past, JSON.parse(JSON.stringify(state.exercises))],
     future: []
@@ -684,12 +700,12 @@ function View2D({ ex }: { ex: Exercise }) {
       const labelStr = seg.label || '';
 
       if (seg.customStyle === 'dashed' || (!seg.customStyle && seg.isDashed)) {
-         ctx.beginPath(); ctx.setLineDash([sc(5), sc(5)]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
-         if (labelStr) queueLabel(labelStr, (seg.p1.x+seg.p2.x)/2, (seg.p1.y+seg.p2.y)/2, getFont(15, "bold"), strokeColor); return;
+         ctx.beginPath(); ctx.setLineDash([sc(5), sc(5)]); ctx.moveTo(seg.p1?.x || 0, seg.p1?.y || 0); ctx.lineTo(seg.p2?.x || 0, seg.p2?.y || 0); ctx.stroke(); ctx.setLineDash([]);
+         if (labelStr) queueLabel(labelStr, ((seg.p1?.x||0)+(seg.p2?.x||0))/2, ((seg.p1?.y||0)+(seg.p2?.y||0))/2, getFont(15, "bold"), strokeColor); return;
       }
       if (seg.customStyle === 'solid') {
-         ctx.beginPath(); ctx.setLineDash([]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke();
-         if (labelStr) queueLabel(labelStr, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor); return;
+         ctx.beginPath(); ctx.setLineDash([]); ctx.moveTo(seg.p1?.x || 0, seg.p1?.y || 0); ctx.lineTo(seg.p2?.x || 0, seg.p2?.y || 0); ctx.stroke();
+         if (labelStr) queueLabel(labelStr, ((seg.p1?.x||0)+(seg.p2?.x||0))/2 + sc(5), ((seg.p1?.y||0)+(seg.p2?.y||0))/2 - sc(5), getFont(15, "bold"), strokeColor); return;
       }
 
       let tVals = [0, 1];
@@ -701,20 +717,20 @@ function View2D({ ex }: { ex: Exercise }) {
           otherSeg = isVerticalProj ? segR1 : segR2;
       }
 
-      if(!otherSeg) {
-          let in1st = isVerticalProj ? (seg.p1.y < ltY) : (seg.p1.y > ltY);
+      if(!otherSeg || !seg.p1 || !seg.p2) {
+          let in1st = isVerticalProj ? ((seg.p1?.y||0) < ltY) : ((seg.p1?.y||0) > ltY);
           ctx.beginPath(); ctx.setLineDash(in1st ? [] : [sc(6), sc(4)]);
-          ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
-          if (labelStr) queueLabel(labelStr, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor); return;
+          ctx.moveTo(seg.p1?.x||0, seg.p1?.y||0); ctx.lineTo(seg.p2?.x||0, seg.p2?.y||0); ctx.stroke(); ctx.setLineDash([]);
+          if (labelStr) queueLabel(labelStr, ((seg.p1?.x||0)+(seg.p2?.x||0))/2 + sc(5), ((seg.p1?.y||0)+(seg.p2?.y||0))/2 - sc(5), getFont(15, "bold"), strokeColor); return;
       }
 
       let dy = seg.p2.y - seg.p1.y;
       if (Math.abs(dy) > 0.01) { let tThis = (ltY - seg.p1.y) / dy; if (tThis > 0 && tThis < 1) tVals.push(tThis); }
 
-      let dyOther = otherSeg ? (otherSeg.p2.y - otherSeg.p1.y) : 0;
-      let dx = seg.p2.x - seg.p1.x; let dxOther = otherSeg ? (otherSeg.p2.x - otherSeg.p1.x) : 0;
+      let dyOther = otherSeg.p2 && otherSeg.p1 ? (otherSeg.p2.y - otherSeg.p1.y) : 0;
+      let dx = seg.p2.x - seg.p1.x; let dxOther = otherSeg.p2 && otherSeg.p1 ? (otherSeg.p2.x - otherSeg.p1.x) : 0;
       
-      if (otherSeg && Math.abs(dyOther) > 0.01 && Math.abs(dx) > 0.01) {
+      if (otherSeg.p1 && Math.abs(dyOther) > 0.01 && Math.abs(dx) > 0.01) {
           let xOtherTrace = otherSeg.p1.x + (ltY - otherSeg.p1.y) * dxOther / dyOther;
           let tOtherMap = (xOtherTrace - seg.p1.x) / dx;
           if (tOtherMap > 0 && tOtherMap < 1) tVals.push(tOtherMap);
@@ -728,7 +744,7 @@ function View2D({ ex }: { ex: Exercise }) {
           let xMid = seg.p1.x + tMid * dx; let yMid = seg.p1.y + tMid * dy;
           let yOtherMid = 0;
           
-          if (otherSeg) {
+          if (otherSeg.p1 && otherSeg.p2) {
               if (Math.abs(dxOther) > 0.01) { let tOther = (xMid - otherSeg.p1.x) / dxOther; yOtherMid = otherSeg.p1.y + tOther * dyOther; } 
               else { yOtherMid = (otherSeg.p1.y + otherSeg.p2.y) / 2; }
           }
@@ -772,6 +788,7 @@ function View2D({ ex }: { ex: Exercise }) {
     }
 
     planes.forEach((pl: ExPlane) => {
+      if(!pl || !pl.p1 || !pl.p2) return;
       const applyDashAndColor = (isAutoDashed: boolean, traceRawId: string) => {
           const selected = isSelected(traceRawId) || isSelected(`pl_${pl.id}`);
           ctx.strokeStyle = selected ? "#00d2ff" : "black"; 
@@ -812,16 +829,18 @@ function View2D({ ex }: { ex: Exercise }) {
     });
 
     segments.forEach((seg: ExSegment) => {
+        if(!seg || !seg.p1 || !seg.p2) return;
         const isV = (seg.label||'').includes('2');
         drawTrueVisibilitySegmentLocal(seg, segments, ltY, isV);
     });
 
     ctx.strokeStyle = "#888"; ctx.setLineDash([sc(5), sc(5)]); ctx.lineWidth = sc(1);
-    pts.forEach((p: any) => { if((p.nodes||[]).length === 2) { ctx.beginPath(); ctx.moveTo(p.nodes[0].x, p.nodes[0].y); ctx.lineTo(p.nodes[1].x, p.nodes[1].y); ctx.stroke(); } });
+    pts.forEach((p: any) => { if((p.nodes||[]).length === 2) { ctx.beginPath(); ctx.moveTo(p.nodes[0]?.x||0, p.nodes[0]?.y||0); ctx.lineTo(p.nodes[1]?.x||0, p.nodes[1]?.y||0); ctx.stroke(); } });
     ctx.setLineDash([]);
     
     pts.forEach((p: any) => {
       (p.nodes||[]).forEach((n: ExNode) => { 
+        if(!n) return;
         const selected = isSelected(`pt_${n.id}`);
         ctx.strokeStyle = selected ? "#00d2ff" : "black"; 
         ctx.fillStyle = ctx.strokeStyle;
@@ -908,12 +927,13 @@ function View2D({ ex }: { ex: Exercise }) {
             
             <Group visible={!isPrinting}>
               {/* LÍNEAS INVISIBLES DE HITBOX PARA RECTAS */}
-              {segments.map(seg => (
+              {segments.map(seg => (seg && seg.p1 && seg.p2) && (
                 <Line key={`hit_seg_${seg.id}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Recta ${(seg.label||'').replace(/[12]/g, '')}`)} />
               ))}
 
               {/* LÍNEAS INVISIBLES DE HITBOX PARA PLANOS */}
               {planes.map(pl => {
+                if(!pl || !pl.p1 || !pl.p2) return null;
                 const hitProps = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, listening: true, onClick: (e:any) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Plano ${pl.name}`) };
                 if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />;
                 if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />;
@@ -947,6 +967,7 @@ function View2D({ ex }: { ex: Exercise }) {
               )}
 
               {planes.map(pl => {
+                if(!pl || !pl.p1 || !pl.p2) return null;
                 if (pl.type === 'horizontal') return <Circle key={pl.id} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={pushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} />;
                 if (pl.type === 'frontal') return <Circle key={pl.id} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={pushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} />;
                 if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={pushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl2_${pl.id}`, `Traza ${pl.name}2`)} /><Circle x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragStart={pushHistory} onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'plano', `pl1_${pl.id}`, `Traza ${pl.name}1`)} /></React.Fragment>;
@@ -959,13 +980,13 @@ function View2D({ ex }: { ex: Exercise }) {
                 );
               })}
 
-              {segments.map(seg => (
+              {segments.map(seg => (seg && seg.p1 && seg.p2) && (
                 <React.Fragment key={seg.id}>
                   {!seg.isDashed && <><Circle x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${(seg.label||'').replace(/[12]/g, '')}`)} />
                   <Circle x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${(seg.label||'').replace(/[12]/g, '')}`)} /></>}
                 </React.Fragment>
               ))}
-              {pts.map(p => (p.nodes||[]).map((n: ExNode) => (
+              {pts.map(p => (p.nodes||[]).map((n: ExNode) => (n && 
                 <Circle key={n.id} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'punto', `pt_${n.id}`, `Punto ${p.name}`)} />
               )))}
             </Group>
