@@ -77,13 +77,21 @@ function applyQuad(val: number, quad: string, isZ: boolean) {
 }
 
 const savedData = localStorage.getItem('diedrico_autosave');
-const initialExercises = savedData ? JSON.parse(savedData) : [];
+let initialExercises: Exercise[] = [];
+try {
+  if (savedData) {
+    const parsed = JSON.parse(savedData);
+    if (Array.isArray(parsed)) initialExercises = parsed;
+  }
+} catch (e) {
+  console.error("Memoria corrupta eliminada", e);
+}
 
 const enforceConstraints = (s: Exercise['state'], triggerId: string) => {
     let changed = true;
     let iterations = 0;
     
-    const getSeg = (id: string) => s.segments.find(sg => sg.id === id);
+    const getSeg = (id: string) => (s.segments || []).find(sg => sg.id === id);
     const getAngle = (seg: ExSegment) => Math.atan2(seg.p2.y - seg.p1.y, seg.p2.x - seg.p1.x);
     const constraints = s.constraints || [];
 
@@ -119,8 +127,8 @@ const enforceConstraints = (s: Exercise['state'], triggerId: string) => {
     return s;
 };
 
-// Función auxiliar segura para grabar el estado histórico sin causar bucles de React
-const saveHistory = (state: CadStore) => ({
+// Función segura para inyectar historial sin causar un bucle de renders en React
+const getHistoryState = (state: CadStore) => ({
     past: [...state.past, JSON.parse(JSON.stringify(state.exercises))],
     future: []
 });
@@ -145,7 +153,7 @@ export const useStore = create<CadStore>()((set, get) => ({
   setPageConfig: (config) => set((state) => ({ ...state, ...config })),
   setPrinting: (val) => set({ isPrinting: val }),
 
-  pushHistory: () => set((state) => saveHistory(state)),
+  pushHistory: () => set((state) => getHistoryState(state)),
   undo: () => set((state) => {
       if (state.past.length === 0) return state;
       const prev = state.past[state.past.length - 1];
@@ -399,95 +407,88 @@ export const useStore = create<CadStore>()((set, get) => ({
       id: uid(), type: t, title, w, h, dataStr,
       state: { ltY, originX, ppX: 750, reqRegla: opts.reqRegla, reqPP: opts.reqPP, reqOrigin: opts.reqOrigin, planes, segments, pts, bounds: { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 }, constraints: [] }
     };
-    return { ...saveHistory(state), exercises: [...state.exercises, newEx] };
+    return { ...getHistoryState(state), exercises: [...state.exercises, newEx] };
   }),
 
-  removeExercise: (id) => set((state) => ({ ...saveHistory(state), exercises: state.exercises.filter(e => e.id !== id), selection: [] })),
-  updateBoxSize: (id, w, h) => set((state) => ({ ...saveHistory(state), exercises: state.exercises.map(ex => ex.id === id ? { ...ex, w, h } : ex) })),
+  removeExercise: (id) => set((state) => ({ ...getHistoryState(state), exercises: state.exercises.filter(e => e.id !== id), selection: [] })),
+  updateBoxSize: (id, w, h) => set((state) => ({ ...getHistoryState(state), exercises: state.exercises.map(ex => ex.id === id ? { ...ex, w, h } : ex) })),
 
-  addFreeElement: (exId, elemType) => set((state) => ({
-    ...saveHistory(state),
-    exercises: state.exercises.map(ex => {
+  addFreeElement: (exId, elemType) => set((state) => {
+    return { ...getHistoryState(state), exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state }; let ox = s.originX; let oy = s.ltY;
       if (elemType === 'punto') {
-          const nextL = String.fromCharCode(65 + s.pts.length);
-          s.pts = [...s.pts, { id:uid(), name: nextL, nodes:[{id:uid(), t:'2', x:ox+50, y:oy-50, pairId:'nf1'}, {id:'nf1', t:'1', x:ox+50, y:oy+50}] }];
+          const nextL = String.fromCharCode(65 + (s.pts||[]).length);
+          s.pts = [...(s.pts||[]), { id:uid(), name: nextL, nodes:[{id:uid(), t:'2', x:ox+50, y:oy-50, pairId:'nf1'}, {id:'nf1', t:'1', x:ox+50, y:oy+50}] }];
       } else if (elemType === 'recta') {
-          const nextL = String.fromCharCode(114 + Math.floor(s.segments.length / 2));
-          s.segments = [...s.segments, { id:uid(), label:`${nextL}2`, p1:{x:ox-50, y:oy-20}, p2:{x:ox+50, y:oy-70} }, { id:uid(), label:`${nextL}1`, p1:{x:ox-50, y:oy+30}, p2:{x:ox+50, y:oy+80} }];
+          const nextL = String.fromCharCode(114 + Math.floor((s.segments||[]).length / 2));
+          s.segments = [...(s.segments||[]), { id:uid(), label:`${nextL}2`, p1:{x:ox-50, y:oy-20}, p2:{x:ox+50, y:oy-70} }, { id:uid(), label:`${nextL}1`, p1:{x:ox-50, y:oy+30}, p2:{x:ox+50, y:oy+80} }];
       } else if (elemType === 'plano') {
           const greek = ['α','β','γ','δ','ε','ζ','η'];
-          const nextL = greek[s.planes.length % greek.length];
-          s.planes = [...s.planes, { id:uid(), name: nextL, type:'oblicuo', vX:ox-70, p1:{x:ox+100, y:oy+150}, p2:{x:ox+100, y:oy-150} }];
+          const nextL = greek[(s.planes||[]).length % greek.length];
+          s.planes = [...(s.planes||[]), { id:uid(), name: nextL, type:'oblicuo', vX:ox-70, p1:{x:ox+100, y:oy+150}, p2:{x:ox+100, y:oy-150} }];
       }
       return { ...ex, state: s };
-    })
-  })),
+    })};
+  }),
 
-  removeElement: (exId, elemType, elemId) => set((state) => ({
-    ...saveHistory(state),
-    exercises: state.exercises.map(ex => {
+  removeElement: (exId, elemType, elemId) => set((state) => {
+    return { ...getHistoryState(state), exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
-      if (elemType === 'punto') s.pts = s.pts.filter(p => p.id !== elemId && !p.nodes.some(n=>n.id===elemId));
-      else if (elemType === 'recta') s.segments = s.segments.filter(sg => sg.id !== elemId);
-      else if (elemType === 'plano') s.planes = s.planes.filter(pl => pl.id !== elemId);
+      if (elemType === 'punto') s.pts = (s.pts||[]).filter(p => p.id !== elemId && !p.nodes.some(n=>n.id===elemId));
+      else if (elemType === 'recta') s.segments = (s.segments||[]).filter(sg => sg.id !== elemId);
+      else if (elemType === 'plano') s.planes = (s.planes||[]).filter(pl => pl.id !== elemId);
       s.constraints = (s.constraints || []).filter(c => c.el1 !== elemId && c.el2 !== elemId);
       return { ...ex, state: s };
-    })
-  })),
+    })};
+  }),
 
-  updateName: (exId, elemType, elemId, newName) => set((state) => ({
-    ...saveHistory(state),
-    exercises: state.exercises.map(ex => {
+  updateName: (exId, elemType, elemId, newName) => set((state) => {
+    return { ...getHistoryState(state), exercises: state.exercises.map(ex => {
       if(ex.id !== exId) return ex;
       let s = {...ex.state};
-      if(elemType === 'punto') s.pts = s.pts.map(p => p.id === elemId ? {...p, name: newName} : p);
-      else if(elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? {...seg, label: newName} : seg);
-      else if(elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
+      if(elemType === 'punto') s.pts = (s.pts||[]).map(p => p.id === elemId ? {...p, name: newName} : p);
+      else if(elemType === 'recta') s.segments = (s.segments||[]).map(seg => seg.id === elemId ? {...seg, label: newName} : seg);
+      else if(elemType === 'plano') s.planes = (s.planes||[]).map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
       return {...ex, state: s};
-    })
-  })),
+    })};
+  }),
 
-  updateExerciseText: (exId, field, text) => set((state) => ({
-    ...saveHistory(state),
-    exercises: state.exercises.map(ex => ex.id !== exId ? ex : { ...ex, [field]: text })
-  })),
+  updateExerciseText: (exId, field, text) => set((state) => {
+    return { ...getHistoryState(state), exercises: state.exercises.map(ex => ex.id !== exId ? ex : { ...ex, [field]: text })};
+  }),
 
-  togglePlaneType: (exId, planeId) => set((state) => ({
-    ...saveHistory(state),
-    exercises: state.exercises.map(ex => {
+  togglePlaneType: (exId, planeId) => set((state) => {
+    return { ...getHistoryState(state), exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => pl.id !== planeId ? pl : { ...pl, type: pl.type === 'paralelo_lt' ? 'oblicuo' : 'paralelo_lt' })}};
-    })
-  })),
+      return { ...ex, state: { ...ex.state, planes: (ex.state.planes||[]).map(pl => pl.id !== planeId ? pl : { ...pl, type: pl.type === 'paralelo_lt' ? 'oblicuo' : 'paralelo_lt' })}};
+    })};
+  }),
 
-  toggleLineStyle: (exId, elemType, elemId) => set((state) => ({
-    ...saveHistory(state),
-    exercises: state.exercises.map(ex => {
+  toggleLineStyle: (exId, elemType, elemId) => set((state) => {
+    return { ...getHistoryState(state), exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
       const nextStyle = (current?: string) => current === 'solid' ? 'dashed' : current === 'dashed' ? undefined : 'solid';
-      if (elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? { ...seg, customStyle: nextStyle(seg.customStyle) } : seg);
-      else if (elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nextStyle(pl.customStyle) } : pl);
+      if (elemType === 'recta') s.segments = (s.segments||[]).map(seg => seg.id === elemId ? { ...seg, customStyle: nextStyle(seg.customStyle) } : seg);
+      else if (elemType === 'plano') s.planes = (s.planes||[]).map(pl => pl.id === elemId ? { ...pl, customStyle: nextStyle(pl.customStyle) } : pl);
       return { ...ex, state: s };
-    })
-  })),
+    })};
+  }),
 
-  addAuxLine: (exId, rawId, mode) => set((state) => ({
-      ...saveHistory(state),
-      exercises: state.exercises.map(ex => {
+  addAuxLine: (exId, rawId, mode) => set((state) => {
+      return { ...getHistoryState(state), exercises: state.exercises.map(ex => {
         if (ex.id !== exId) return ex;
         let s = { ...ex.state };
         let p1 = null, p2 = null;
         let id = rawId.includes('_') ? rawId.split('_')[1] : rawId;
 
-        if (rawId.includes('seg') || s.segments.find(x => x.id === id)) {
-            let seg = s.segments.find(x => x.id === id);
+        if (rawId.includes('seg') || (s.segments||[]).find(x => x.id === id)) {
+            let seg = (s.segments||[]).find(x => x.id === id);
             if (seg) { p1 = seg.p1; p2 = seg.p2; }
-        } else if (rawId.includes('pl') || s.planes.find(x => x.id === id)) {
-            let pl = s.planes.find(x => x.id === id);
+        } else if (rawId.includes('pl') || (s.planes||[]).find(x => x.id === id)) {
+            let pl = (s.planes||[]).find(x => x.id === id);
             if (pl) {
                 let isTrace1 = rawId.includes('1');
                 if (pl.type === 'paralelo_lt') {
@@ -519,15 +520,14 @@ export const useStore = create<CadStore>()((set, get) => ({
                 nx2 = cx + (-uy) * lineLen/2; ny2 = cy + ux * lineLen/2;
             }
             
-            s.segments = [...s.segments, { id: uid(), label: '', p1: {x: nx1, y: ny1}, p2: {x: nx2, y: ny2}, customStyle: 'dashed' }];
+            s.segments = [...(s.segments||[]), { id: uid(), label: '', p1: {x: nx1, y: ny1}, p2: {x: nx2, y: ny2}, customStyle: 'dashed' }];
         }
         return { ...ex, state: s };
-      })
-  })),
+      })};
+  }),
 
-  addConstraint: (exId, type, el1, el2) => set((state) => ({
-      ...saveHistory(state),
-      exercises: state.exercises.map(ex => {
+  addConstraint: (exId, type, el1, el2) => set((state) => {
+      return { ...getHistoryState(state), exercises: state.exercises.map(ex => {
           if (ex.id !== exId) return ex;
           let s = { ...ex.state };
           s.constraints = (s.constraints || []).filter(c => c.el2 !== el2 && c.el1 !== el2);
@@ -536,29 +536,29 @@ export const useStore = create<CadStore>()((set, get) => ({
           return { ...ex, state: s };
       }), 
       selection: [] 
-  })),
+      };
+  }),
 
-  removeConstraint: (exId, constraintId) => set((state) => ({
-      ...saveHistory(state),
-      exercises: state.exercises.map(ex => {
+  removeConstraint: (exId, constraintId) => set((state) => {
+      return { ...getHistoryState(state), exercises: state.exercises.map(ex => {
           if (ex.id !== exId) return ex;
           return { ...ex, state: { ...ex.state, constraints: (ex.state.constraints || []).filter(c => c.id !== constraintId) } };
-      })
-  })),
+      })};
+  }),
 
   updateNode: (exId, ptId, nodeId, newX, newY) => set((state) => ({
     exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
       
-      let thePoint = s.pts.find(p => p.id === ptId);
+      let thePoint = (s.pts||[]).find(p => p.id === ptId);
       let theNode = thePoint?.nodes.find(n => n.id === nodeId);
       
       if (theNode) {
          let dx = newX - theNode.x;
          let pairNode = thePoint?.nodes.find(n => n.id === theNode?.pairId);
 
-         s.segments = s.segments.map(seg => {
+         s.segments = (s.segments||[]).map(seg => {
              let ns = {...seg};
              if (Math.abs(seg.p1.x - theNode!.x) < 1 && Math.abs(seg.p1.y - theNode!.y) < 1) ns.p1 = {x: newX, y: newY};
              if (Math.abs(seg.p2.x - theNode!.x) < 1 && Math.abs(seg.p2.y - theNode!.y) < 1) ns.p2 = {x: newX, y: newY};
@@ -571,7 +571,7 @@ export const useStore = create<CadStore>()((set, get) => ({
          });
       }
 
-      s.pts = s.pts.map(p => p.id !== ptId ? p : { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, x: newX, y: newY } : (n.pairId === nodeId ? { ...n, x: newX } : n)) });
+      s.pts = (s.pts||[]).map(p => p.id !== ptId ? p : { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, x: newX, y: newY } : (n.pairId === nodeId ? { ...n, x: newX } : n)) });
       return { ...ex, state: s };
     })
   })),
@@ -579,21 +579,21 @@ export const useStore = create<CadStore>()((set, get) => ({
   updatePlane: (exId, planeId, newVX) => set((state) => ({
     exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => pl.id !== planeId ? pl : { ...pl, vX: newVX, p1: {x: pl.p1.x + (newVX - pl.vX), y: pl.p1.y}, p2: {x: pl.p2.x + (newVX - pl.vX), y: pl.p2.y} }) } };
+      return { ...ex, state: { ...ex.state, planes: (ex.state.planes||[]).map(pl => pl.id !== planeId ? pl : { ...pl, vX: newVX, p1: {x: pl.p1.x + (newVX - pl.vX), y: pl.p1.y}, p2: {x: pl.p2.x + (newVX - pl.vX), y: pl.p2.y} }) } };
     })
   })),
 
   updatePlaneEndpoint: (exId, planeId, traceNum, newX, newY) => set((state) => ({
     exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => pl.id !== planeId ? pl : (traceNum === 1 ? { ...pl, p1: { x: newX, y: newY } } : { ...pl, p2: { x: newX, y: newY } })) } };
+      return { ...ex, state: { ...ex.state, planes: (ex.state.planes||[]).map(pl => pl.id !== planeId ? pl : (traceNum === 1 ? { ...pl, p1: { x: newX, y: newY } } : { ...pl, p2: { x: newX, y: newY } })) } };
     })
   })),
 
   updateSegment: (exId, segId, pointIndex, newX, newY) => set((state) => ({
     exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      let s = { ...ex.state, segments: ex.state.segments.map(seg => seg.id !== segId ? seg : (pointIndex === 1 ? { ...seg, p1: { x: newX, y: newY } } : { ...seg, p2: { x: newX, y: newY } })) };
+      let s = { ...ex.state, segments: (ex.state.segments||[]).map(seg => seg.id !== segId ? seg : (pointIndex === 1 ? { ...seg, p1: { x: newX, y: newY } } : { ...seg, p2: { x: newX, y: newY } })) };
       s = enforceConstraints(s, segId);
       return { ...ex, state: s };
     })
@@ -609,9 +609,9 @@ export const useStore = create<CadStore>()((set, get) => ({
       else if (target === 'origin') {
         let dx = valX - s.originX; let dy = valY - s.ltY;
         s.originX = valX; s.ltY = valY; s.ppX += dx;
-        s.planes = s.planes.map(pl => ({...pl, vX: pl.vX + dx, p1: {x: pl.p1.x + dx, y: pl.p1.y + dy}, p2: {x: pl.p2.x + dx, y: pl.p2.y + dy}}));
-        s.segments = s.segments.map(sg => ({...sg, p1:{x:sg.p1.x+dx, y:sg.p1.y+dy}, p2:{x:sg.p2.x+dx, y:sg.p2.y+dy}}));
-        s.pts = s.pts.map(p => ({...p, nodes: p.nodes.map(n => ({...n, x: n.x+dx, y: n.y+dy}))}));
+        s.planes = (s.planes||[]).map(pl => ({...pl, vX: pl.vX + dx, p1: {x: pl.p1.x + dx, y: pl.p1.y + dy}, p2: {x: pl.p2.x + dx, y: pl.p2.y + dy}}));
+        s.segments = (s.segments||[]).map(sg => ({...sg, p1:{x:sg.p1.x+dx, y:sg.p1.y+dy}, p2:{x:sg.p2.x+dx, y:sg.p2.y+dy}}));
+        s.pts = (s.pts||[]).map(p => ({...p, nodes: p.nodes.map(n => ({...n, x: n.x+dx, y: n.y+dy}))}));
       }
       else if (target === 'lt1') s.bounds.ltX1 = valX; else if (target === 'lt2') s.bounds.ltX2 = valX;
       else if (target === 'o1') s.bounds.oY1 = valY; else if (target === 'o2') s.bounds.oY2 = valY;
@@ -629,7 +629,7 @@ useStore.subscribe((state) => { localStorage.setItem('diedrico_autosave', JSON.s
 // ==========================================
 function View2D({ ex }: { ex: Exercise }) {
   const { updateNode, updatePlane, updatePlaneEndpoint, updateSegment, updateSystem, toggleSelection, selection, isPrinting, pushHistory } = useStore();
-  const { ltY, originX, ppX, reqRegla, reqPP, reqOrigin, planes, pts, segments } = ex.state;
+  const { ltY, originX, ppX, reqRegla, reqPP, reqOrigin, planes = [], pts = [], segments = [] } = ex.state;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ w: 800, h: 400 });
@@ -670,21 +670,23 @@ function View2D({ ex }: { ex: Exercise }) {
       ctx.strokeStyle = strokeColor;
       ctx.lineWidth = selected ? sc(3) : sc(2.2);
       
+      const labelStr = seg.label || '';
+
       if (seg.customStyle === 'dashed' || (!seg.customStyle && seg.isDashed)) {
          ctx.beginPath(); ctx.setLineDash([sc(5), sc(5)]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
-         if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2, (seg.p1.y+seg.p2.y)/2, getFont(15, "bold"), strokeColor); return;
+         if (labelStr) queueLabel(labelStr, (seg.p1.x+seg.p2.x)/2, (seg.p1.y+seg.p2.y)/2, getFont(15, "bold"), strokeColor); return;
       }
       if (seg.customStyle === 'solid') {
          ctx.beginPath(); ctx.setLineDash([]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke();
-         if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor); return;
+         if (labelStr) queueLabel(labelStr, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor); return;
       }
 
       let tVals = [0, 1];
-      let prefix = seg.label.replace(/[12]/g, '');
-      let otherSeg = stSegments.find(s => s.label === prefix + (isVerticalProj ? '1' : '2'));
+      let prefix = labelStr.replace(/[12]/g, '');
+      let otherSeg = stSegments.find(s => (s.label||'') === prefix + (isVerticalProj ? '1' : '2'));
 
       if (!otherSeg) {
-          let segR2 = stSegments.find(s => s.label.includes('2')); let segR1 = stSegments.find(s => s.label.includes('1'));
+          let segR2 = stSegments.find(s => (s.label||'').includes('2')); let segR1 = stSegments.find(s => (s.label||'').includes('1'));
           otherSeg = isVerticalProj ? segR1 : segR2;
       }
 
@@ -692,7 +694,7 @@ function View2D({ ex }: { ex: Exercise }) {
           let in1st = isVerticalProj ? (seg.p1.y < ltY) : (seg.p1.y > ltY);
           ctx.beginPath(); ctx.setLineDash(in1st ? [] : [sc(6), sc(4)]);
           ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
-          if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor); return;
+          if (labelStr) queueLabel(labelStr, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor); return;
       }
 
       let dy = seg.p2.y - seg.p1.y;
@@ -727,7 +729,7 @@ function View2D({ ex }: { ex: Exercise }) {
           ctx.moveTo(seg.p1.x + tA * dx, seg.p1.y + tA * dy); ctx.lineTo(seg.p1.x + tB * dx, seg.p1.y + tB * dy); ctx.stroke();
       }
       ctx.setLineDash([]);
-      if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor);
+      if (labelStr) queueLabel(labelStr, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), getFont(15, "bold"), strokeColor);
     };
 
     ctx.strokeStyle = "black"; ctx.lineWidth = sc(2.2);
@@ -799,16 +801,16 @@ function View2D({ ex }: { ex: Exercise }) {
     });
 
     segments.forEach((seg: ExSegment) => {
-        const isV = seg.label.includes('2');
+        const isV = (seg.label||'').includes('2');
         drawTrueVisibilitySegmentLocal(seg, segments, ltY, isV);
     });
 
     ctx.strokeStyle = "#888"; ctx.setLineDash([sc(5), sc(5)]); ctx.lineWidth = sc(1);
-    pts.forEach((p: any) => { if(p.nodes.length === 2) { ctx.beginPath(); ctx.moveTo(p.nodes[0].x, p.nodes[0].y); ctx.lineTo(p.nodes[1].x, p.nodes[1].y); ctx.stroke(); } });
+    pts.forEach((p: any) => { if((p.nodes||[]).length === 2) { ctx.beginPath(); ctx.moveTo(p.nodes[0].x, p.nodes[0].y); ctx.lineTo(p.nodes[1].x, p.nodes[1].y); ctx.stroke(); } });
     ctx.setLineDash([]);
     
     pts.forEach((p: any) => {
-      p.nodes.forEach((n: ExNode) => { 
+      (p.nodes||[]).forEach((n: ExNode) => { 
         const selected = isSelected(`pt_${n.id}`);
         ctx.strokeStyle = selected ? "#00d2ff" : "black"; 
         ctx.fillStyle = ctx.strokeStyle;
@@ -880,7 +882,7 @@ function View2D({ ex }: { ex: Exercise }) {
       e.cancelBubble = true;
       let id = rawId.includes('_') ? rawId.split('_')[1] : rawId;
       if (type === 'punto') {
-          let thePt = ex.state.pts.find(p => p.nodes.some(n => n.id === id));
+          let thePt = pts.find(p => (p.nodes||[]).some(n => n.id === id));
           if(thePt) id = thePt.id;
       }
       toggleSelection({ exId: ex.id, type, id, rawId, label });
@@ -896,7 +898,7 @@ function View2D({ ex }: { ex: Exercise }) {
             <Group visible={!isPrinting}>
               {/* LÍNEAS INVISIBLES DE HITBOX PARA RECTAS */}
               {segments.map(seg => (
-                <Line key={`hit_seg_${seg.id}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Recta ${seg.label.replace(/[12]/g, '')}`)} />
+                <Line key={`hit_seg_${seg.id}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Recta ${(seg.label||'').replace(/[12]/g, '')}`)} />
               ))}
 
               {/* LÍNEAS INVISIBLES DE HITBOX PARA PLANOS */}
@@ -948,11 +950,11 @@ function View2D({ ex }: { ex: Exercise }) {
 
               {segments.map(seg => (
                 <React.Fragment key={seg.id}>
-                  {!seg.isDashed && <><Circle x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${seg.label.replace(/[12]/g, '')}`)} />
-                  <Circle x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${seg.label.replace(/[12]/g, '')}`)} /></>}
+                  {!seg.isDashed && <><Circle x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${(seg.label||'').replace(/[12]/g, '')}`)} />
+                  <Circle x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'recta', `seg_${seg.id}`, `Extremo Recta ${(seg.label||'').replace(/[12]/g, '')}`)} /></>}
                 </React.Fragment>
               ))}
-              {pts.map(p => p.nodes.map(n => (
+              {pts.map(p => (p.nodes||[]).map((n: ExNode) => (
                 <Circle key={n.id} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragStart={pushHistory} onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} onClick={(e) => handleEntityClick(e, 'punto', `pt_${n.id}`, `Punto ${p.name}`)} />
               )))}
             </Group>
@@ -1327,14 +1329,14 @@ export default function App() {
                                 <div key={sel.rawId} style={{background: '#1e1e24', padding: '10px', borderRadius: '4px', borderLeft: '3px solid #00d2ff'}}>
                                     <div style={{fontWeight: 'bold', fontSize: '0.9rem', color: '#00d2ff', marginBottom: '8px'}}>{sel.label}</div>
                                     <div style={{display: 'flex', gap: '5px'}}>
-                                        <button className="tool-btn" style={{flex: 1, padding: '4px'}} onClick={() => updateName(sel.exId, sel.type, sel.id, "")} title="Ocultar letra">🆑 Nombre</button>
+                                        <button className="tool-btn" style={{flex: 1, padding: '4px'}} onClick={() => useStore.getState().updateName(sel.exId, sel.type, sel.id, "")} title="Ocultar letra">🆑 Nombre</button>
                                         {(sel.type === 'recta' || sel.type === 'plano') && (
-                                            <button className="tool-btn" style={{flex: 1, padding: '4px'}} onClick={() => toggleLineStyle(sel.exId, sel.type, sel.id)} title="Cambiar tipo de línea">🔄 Línea</button>
+                                            <button className="tool-btn" style={{flex: 1, padding: '4px'}} onClick={() => useStore.getState().toggleLineStyle(sel.exId, sel.type, sel.id)} title="Cambiar tipo de línea">🔄 Línea</button>
                                         )}
                                         {sel.type === 'plano' && (
-                                            <button className="tool-btn" style={{flex: 1, padding: '4px'}} onClick={() => togglePlaneType(sel.exId, sel.id)} title="Hacer paralelo a LT">⮂ Paralelo LT</button>
+                                            <button className="tool-btn" style={{flex: 1, padding: '4px'}} onClick={() => useStore.getState().togglePlaneType(sel.exId, sel.id)} title="Hacer paralelo a LT">⮂ Paralelo LT</button>
                                         )}
-                                        <button className="tool-btn" style={{background: '#ff4757', border: 'none', padding: '4px 8px'}} onClick={() => { removeElement(sel.exId, sel.type, sel.id); setSelection(selection.filter(s => s.id !== sel.id)); }}>🗑️</button>
+                                        <button className="tool-btn" style={{background: '#ff4757', border: 'none', padding: '4px 8px'}} onClick={() => { useStore.getState().removeElement(sel.exId, sel.type, sel.id); useStore.getState().setSelection(selection.filter(s => s.id !== sel.id)); }}>🗑️</button>
                                     </div>
                                 </div>
                             ))}
@@ -1344,8 +1346,8 @@ export default function App() {
                                 <div style={{marginTop: '10px', background: '#3d3d52', padding: '10px', borderRadius: '4px', border: '1px solid #00d2ff'}}>
                                     <div style={{fontSize: '0.8rem', color: '#00d2ff', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center'}}>AÑADIR AUXILIARES LIBRES</div>
                                     <div style={{display: 'flex', gap: '5px'}}>
-                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => { addAuxLine(selection[0].exId, selection[0].rawId, 'parallel'); setSelection([]); }}>+ // Paralela</button>
-                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => { addAuxLine(selection[0].exId, selection[0].rawId, 'perp'); setSelection([]); }}>+ ⟂ Perpend.</button>
+                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => { useStore.getState().addAuxLine(selection[0].exId, selection[0].rawId, 'parallel'); useStore.getState().setSelection([]); }}>+ // Paralela</button>
+                                        <button className="action-btn" style={{margin: 0, padding: '6px'}} onClick={() => { useStore.getState().addAuxLine(selection[0].exId, selection[0].rawId, 'perp'); useStore.getState().setSelection([]); }}>+ ⟂ Perpend.</button>
                                     </div>
                                 </div>
                             )}
@@ -1355,8 +1357,8 @@ export default function App() {
                                 <div style={{marginTop: '10px', background: '#3d3d52', padding: '10px', borderRadius: '4px', border: '1px solid #eccc68'}}>
                                     <div style={{fontSize: '0.8rem', color: '#eccc68', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center'}}>VINCULAR GEOMETRÍA</div>
                                     <div style={{display: 'flex', gap: '5px'}}>
-                                        <button className="action-btn warning" style={{margin: 0, padding: '6px'}} onClick={() => addConstraint(selection[0].exId, 'parallel', selection[0].id, selection[1].id)}>🔗 // Paralelas</button>
-                                        <button className="action-btn warning" style={{margin: 0, padding: '6px'}} onClick={() => addConstraint(selection[0].exId, 'perp', selection[0].id, selection[1].id)}>🔗 ⟂ Perpend.</button>
+                                        <button className="action-btn warning" style={{margin: 0, padding: '6px'}} onClick={() => useStore.getState().addConstraint(selection[0].exId, 'parallel', selection[0].id, selection[1].id)}>🔗 // Paralelas</button>
+                                        <button className="action-btn warning" style={{margin: 0, padding: '6px'}} onClick={() => useStore.getState().addConstraint(selection[0].exId, 'perp', selection[0].id, selection[1].id)}>🔗 ⟂ Perpend.</button>
                                     </div>
                                 </div>
                             )}
@@ -1367,7 +1369,7 @@ export default function App() {
                                 </div>
                             )}
 
-                            <button className="action-btn warning" style={{marginTop: '10px'}} onClick={() => setSelection([])}>Deseleccionar Todo</button>
+                            <button className="action-btn warning" style={{marginTop: '10px'}} onClick={() => useStore.getState().setSelection([])}>Deseleccionar Todo</button>
                         </div>
                     )}
                 </div>
@@ -1380,8 +1382,8 @@ export default function App() {
                              const isParallel = c.type === 'parallel';
                              return (
                                  <div key={c.id} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e1e24', padding: '8px 10px', borderRadius: '4px', marginBottom: '5px', fontSize: '0.85rem', borderLeft: '3px solid #eccc68'}}>
-                                     <span style={{color: '#ddd'}}>{isParallel ? '🔗 Paralelismo' : '🔗 Perpendicularidad'}</span>
-                                     <button style={{background: 'transparent', border: 'none', color: '#ff4757', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem'}} onClick={() => removeConstraint(selection[0].exId, c.id)}>✕</button>
+                                     <span style={{color: '#ddd'}}>{isParallel ? '🔗 Paralelismo' : '🔗 Perpendicular'}</span>
+                                     <button style={{background: 'transparent', border: 'none', color: '#ff4757', cursor: 'pointer', fontWeight: 'bold', fontSize: '1rem'}} onClick={() => useStore.getState().removeConstraint(selection[0].exId, c.id)}>✕</button>
                                  </div>
                              );
                          })}
@@ -1391,7 +1393,7 @@ export default function App() {
                 {/* Borrar Ejercicio (Global para la selección activa) */}
                 {selection.length > 0 && (
                     <button className="action-btn danger" style={{marginTop: 'auto'}} onClick={() => {
-                        removeExercise(selection[0].exId);
+                        useStore.getState().removeExercise(selection[0].exId);
                     }}>Eliminar Ejercicio Completo</button>
                 )}
             </div>
