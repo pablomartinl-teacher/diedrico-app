@@ -9,8 +9,9 @@ permissions:
   pages: write
   id-token: write
 
+# Esta línea silencia la advertencia y fuerza el uso de Node 24
 env:
-  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   build:
