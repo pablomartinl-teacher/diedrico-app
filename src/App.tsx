@@ -8,7 +8,6 @@ import { Stage, Layer, Shape, Circle, Group, Line } from 'react-konva';
 export interface ExNode { id: string; t: string; x: number; y: number; pairId?: string; }
 export interface ExPlane { id: string; name: string; type: string; vX: number; p1: {x:number, y:number}; p2: {x:number, y:number}; customStyle?: 'solid' | 'dashed'; }
 export interface ExSegment { id: string; label: string; p1: {x:number, y:number}; p2: {x:number, y:number}; isDashed?: boolean; customStyle?: 'solid' | 'dashed'; }
-export interface Constraint { id: string; type: 'parallel' | 'perpendicular'; exId: string; elem1Id: string; elem1Type: 'recta' | 'plano'; elem2Id: string; elem2Type: 'recta' | 'plano'; angleDelta: number; }
 export interface Exercise {
   id: string; title: string; type: string; w: string; h: string; dataStr: string;
   state: { ltY: number; originX: number; ppX: number; reqRegla: boolean; reqPP: boolean; reqOrigin: boolean; planes: ExPlane[]; segments: ExSegment[]; pts: {id:string, name:string, nodes:ExNode[]}[]; bounds?: { ltX1: number; ltX2: number; oY1: number; oY2: number; pY1: number; pY2: number; } };
@@ -16,28 +15,15 @@ export interface Exercise {
 
 interface CadStore {
   exercises: Exercise[];
-  history: Exercise[][];
-  historyIndex: number;
   isPrinting: boolean;
   pageSize: 'A4' | 'A3';
   fontFamily: string;
   fontSize: number;
-  sheetZoom: number;
-  selectedElements: { exId: string; type: 'punto' | 'recta' | 'plano'; id: string; label: string }[];
-  constraints: Constraint[];
-  
-  commitHistory: () => void;
-  undo: () => void;
-  redo: () => void;
-  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number, sheetZoom: number}>) => void;
+  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number}>) => void;
   setPrinting: (val: boolean) => void;
   addExercise: (opts: any) => void;
   removeExercise: (id: string) => void;
   updateBoxSize: (id: string, w: string, h: string) => void;
-  selectElement: (exId: string, type: 'punto' | 'recta' | 'plano', id: string, label: string) => void;
-  clearSelection: () => void;
-  applyConstraint: (type: 'parallel' | 'perpendicular') => void;
-  removeConstraint: (id: string) => void;
   updateNode: (exId: string, ptId: string, nodeId: string, newX: number, newY: number) => void;
   updatePlane: (exId: string, planeId: string, newVX: number) => void;
   updatePlaneEndpoint: (exId: string, planeId: string, traceNum: 1|2, newX: number, newY: number) => void;
@@ -68,147 +54,48 @@ function applyQuad(val: number, quad: string, isZ: boolean) {
   return val;
 }
 
-function getLineAngle(p1: {x:number, y:number}, p2: {x:number, y:number}) {
-  return Math.atan2(p2.y - p1.y, p2.x - p1.x);
-}
-
-function enforceConstraintPair(ex: Exercise, c: Constraint, structuralChangeOnId: string) {
-  let seg1 = ex.state.segments.find(s => s.id === c.elem1Id);
-  let pl1 = ex.state.planes.find(p => p.id === c.elem1Id);
-  let seg2 = ex.state.segments.find(s => s.id === c.elem2Id);
-  let pl2 = ex.state.planes.find(p => p.id === c.elem2Id);
-
-  if (!seg1 && !pl1) return;
-  if (!seg2 && !pl2) return;
-
-  let targetAngle = 0;
-  let driverP1 = {x:0, y:0}, driverP2 = {x:0, y:0};
-  let driverIs2 = (structuralChangeOnId === c.elem2Id);
-  
-  let driverSeg = driverIs2 ? seg2 : seg1;
-  let driverPl = driverIs2 ? pl2 : pl1;
-  let drivenSeg = driverIs2 ? seg1 : seg2;
-  let drivenPl = driverIs2 ? pl1 : pl2;
-
-  if (driverSeg) { driverP1 = driverSeg.p1; driverP2 = driverSeg.p2; }
-  else if (driverPl) { driverP1 = {x: driverPl.vX, y: ex.state.ltY}; driverP2 = driverPl.p2; } 
-  
-  let baseAngle = getLineAngle(driverP1, driverP2);
-  targetAngle = c.type === 'parallel' ? baseAngle : baseAngle + Math.PI/2;
-
-  if (drivenSeg) {
-      let len = Math.hypot(drivenSeg.p2.y - drivenSeg.p1.y, drivenSeg.p2.x - drivenSeg.p1.x);
-      drivenSeg.p2.x = drivenSeg.p1.x + len * Math.cos(targetAngle);
-      drivenSeg.p2.y = drivenSeg.p1.y + len * Math.sin(targetAngle);
-  } else if (drivenPl) {
-      let len2 = Math.hypot(drivenPl.p2.y - ex.state.ltY, drivenPl.p2.x - drivenPl.vX);
-      drivenPl.p2.x = drivenPl.vX + len2 * Math.cos(targetAngle);
-      drivenPl.p2.y = ex.state.ltY + len2 * Math.sin(targetAngle);
-  }
-}
-
-// SISTEMA DEFENSIVO: Si los datos locales están corruptos, inicia de cero.
-let initialExercises: Exercise[] = [];
-try {
-  const savedData = localStorage.getItem('diedrico_autosave');
-  if (savedData) {
-    const parsed = JSON.parse(savedData);
-    if (Array.isArray(parsed) && parsed.every(ex => ex && ex.state)) initialExercises = parsed;
-    else localStorage.removeItem('diedrico_autosave');
-  }
-} catch (e) { localStorage.removeItem('diedrico_autosave'); }
+const savedData = localStorage.getItem('diedrico_autosave');
+const initialExercises = savedData ? JSON.parse(savedData) : [];
 
 export const useStore = create<CadStore>()((set, get) => ({
   exercises: initialExercises,
-  history: [initialExercises],
-  historyIndex: 0,
   isPrinting: false,
   pageSize: 'A4',
   fontFamily: "'Segoe UI', sans-serif",
   fontSize: 13,
-  sheetZoom: 100,
-  selectedElements: [],
-  constraints: [],
-
-  commitHistory: () => set(state => {
-    const currentJSON = JSON.stringify(state.exercises);
-    const lastHistoryJSON = JSON.stringify(state.history[state.historyIndex]);
-    if (currentJSON === lastHistoryJSON) return state; 
-    const cleanHistory = state.history.slice(0, state.historyIndex + 1);
-    return { history: [...cleanHistory, JSON.parse(currentJSON)], historyIndex: cleanHistory.length };
-  }),
-
-  undo: () => set(state => {
-    if (state.historyIndex > 0) return { historyIndex: state.historyIndex - 1, exercises: JSON.parse(JSON.stringify(state.history[state.historyIndex - 1])) };
-    return state;
-  }),
-
-  redo: () => set(state => {
-    if (state.historyIndex < state.history.length - 1) return { historyIndex: state.historyIndex + 1, exercises: JSON.parse(JSON.stringify(state.history[state.historyIndex + 1])) };
-    return state;
-  }),
-
+  
   setPageConfig: (config) => set((state) => ({ ...state, ...config })),
   setPrinting: (val) => set({ isPrinting: val }),
-
-  selectElement: (exId, type, id, label) => set((state) => {
-    let list = [...(state.selectedElements || [])];
-    const index = list.findIndex(item => item.id === id);
-    if (index > -1) list.splice(index, 1);
-    else {
-      if (list.length >= 2) list.shift();
-      list.push({ exId, type, id, label });
-    }
-    return { selectedElements: list };
-  }),
-
-  clearSelection: () => set({ selectedElements: [] }),
-
-  applyConstraint: (type) => {
-    const state = get();
-    if (state.selectedElements.length !== 2) return;
-    const [e1, e2] = state.selectedElements;
-    if (e1.exId !== e2.exId) return;
-
-    const newConstraint: Constraint = {
-      id: uid(), type, exId: e1.exId, elem1Id: e1.id, elem1Type: e1.type as any, elem2Id: e2.id, elem2Type: e2.type as any, angleDelta: type === 'parallel' ? 0 : Math.PI/2
-    };
-
-    set(st => ({
-      exercises: st.exercises.map(ex => {
-        if (ex.id !== e1.exId) return ex;
-        let cloned = JSON.parse(JSON.stringify(ex));
-        enforceConstraintPair(cloned, newConstraint, e1.id);
-        return cloned;
-      }),
-      constraints: [...st.constraints, newConstraint],
-      selectedElements: []
-    }));
-    get().commitHistory();
+  
+  saveData: () => { 
+    localStorage.setItem('diedrico_pro_data', JSON.stringify(get().exercises)); 
+    alert("Lámina guardada en la memoria del navegador."); 
   },
-
-  removeConstraint: (id) => set(state => ({ constraints: state.constraints.filter(c => c.id !== id) })),
-
-  saveData: () => { localStorage.setItem('diedrico_pro_data', JSON.stringify(get().exercises)); alert("Lámina guardada."); },
   loadData: () => { 
     const d = localStorage.getItem('diedrico_pro_data'); 
-    if (d) { set({ exercises: JSON.parse(d) }); get().commitHistory(); } else alert("No hay datos guardados."); 
+    if (d) set({ exercises: JSON.parse(d) }); 
+    else alert("No hay datos guardados."); 
   },
   downloadData: () => { 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(get().exercises));
-    const a = document.createElement('a'); a.href = dataStr; a.download = `lamina_diedrico_${new Date().getTime()}.json`; a.click();
+    const a = document.createElement('a');
+    a.href = dataStr;
+    a.download = `lamina_diedrico_${new Date().getTime()}.json`;
+    a.click();
   },
 
-  addExercise: (opts) => {
+  addExercise: (opts) => set((state) => {
     const originX = 400; const ltY = 250;
     let planes: ExPlane[] = []; let segments: ExSegment[] = []; let pts: any[] = [];
     let title = "Ejercicio"; let dataStr = ""; let w = "50%"; let h = "136mm";
+
     const t = opts.type;
 
     const genPlane = (name: string, pType: string, isA: boolean, fixedOffset = 0): ExPlane => {
       let vx = originX + rand(-40, 40) * SF * (isA ? -1 : 1) + fixedOffset;
       let m1 = (0.7 + rand(0, 0.5)) * (Math.random() > 0.5 ? 1 : -1); let m2 = -(0.7 + rand(0, 0.5));
       let p1 = { x: vx + 200, y: ltY + m1 * 200 }; let p2 = { x: vx + 200, y: ltY + m2 * 200 };
+      
       if (pType === 'proy_horiz') { p1.x = vx; p1.y = ltY + 200; }
       if (pType === 'proy_vert') { p2.x = vx; p2.y = ltY - 200; }
       if (pType === 'perfil') { p1.x = vx; p1.y = ltY + 200; p2.x = vx; p2.y = ltY - 200; }
@@ -239,12 +126,15 @@ export const useStore = create<CadStore>()((set, get) => ({
       if(opts.lineType === 'incidente_lt') { ay = 0; az = 0; ax = 0; } if(opts.lineType === 'contenida_pv') { ay = 0; by = 0; } if(opts.lineType === 'contenida_ph') { az = 0; bz = 0; }
 
       title = "Dibujar las proyecciones de la recta. Indicar trazas, cuadrantes y tipo de recta.";
+      
       if (opts.lineMethod === 'coord') {
         dataStr = `A(${ax}, ${ay}, ${az})  |  B(${bx}, ${by}, ${bz})`; 
       } else if (opts.lineMethod === 'puntos') {
+        dataStr = "";
         pts.push({ id:uid(), name:'A', nodes:[{id:uid(), t:'2', x:originX+ax*SF, y:ltY-az*SF, pairId:'n1A'}, {id:'n1A', t:'1', x:originX+ax*SF, y:ltY+ay*SF}] });
         pts.push({ id:uid(), name:'B', nodes:[{id:uid(), t:'2', x:originX+bx*SF, y:ltY-bz*SF, pairId:'n1B'}, {id:'n1B', t:'1', x:originX+bx*SF, y:ltY+by*SF}] });
       } else {
+        dataStr = "";
         segments.push({ id:uid(), label:'r2', p1:{x:originX+ax*SF, y:ltY-az*SF}, p2:{x:originX+bx*SF, y:ltY-bz*SF} }, { id:uid(), label:'r1', p1:{x:originX+ax*SF, y:ltY+ay*SF}, p2:{x:originX+bx*SF, y:ltY+by*SF} });
       }
     }
@@ -255,10 +145,12 @@ export const useStore = create<CadStore>()((set, get) => ({
       if (opts.planeType === 'proy_vert') sy = '∞'; if (opts.planeType === 'proy_horiz') sz = '∞';
       if (opts.planeType === 'perfil') { sy = '∞'; sz = '∞'; } if (opts.planeType === 'horizontal') { sx = '∞'; sy = '∞'; }
       if (opts.planeType === 'frontal') { sx = '∞'; sz = '∞'; } if (opts.planeType === 'paralelo_lt') { sx = '∞'; }
+      
       dataStr = `Plano α(${sx}, ${sy}, ${sz})`; 
       title = "Dibujar proyecciones de las trazas. Indicar cuadrantes del plano y tipo de plano.";
     }
     else if (t === 'intersecciones') {
+      dataStr = "";
       title = "Hallar la recta de intersección de los planos.";
       if (opts.intSub === 'todas') {
         planes.push(genPlane('α', opts.intP1, true, -50), genPlane('β', opts.intP2, false, 50));
@@ -273,9 +165,11 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     } 
     else if (t === 'paralelismo') {
+      dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -60);
       let px = originX + 40*SF; let pz = ltY - 60; let py = ltY + 50;
-      pts.push({ id: uid(), name: 'A', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1A'}, {id:'n1A', t:'1', x:px, y:py}] });
+      let pto = { id: uid(), name: 'A', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1A'}, {id:'n1A', t:'1', x:px, y:py}] };
+      pts.push(pto);
       
       if (opts.paraSub === 'r_r_pto') {
         segments.push({ id:uid(), label:'r2', p1:{x:originX-40*SF, y:ltY-20*SF}, p2:{x:originX+30*SF, y:ltY-60*SF} }, { id:uid(), label:'r1', p1:{x:originX-40*SF, y:ltY+30*SF}, p2:{x:originX+30*SF, y:ltY+70*SF} });
@@ -300,6 +194,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'perpendicularidad') {
+      dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -40);
       let px = originX + 50*SF; let pz = ltY - 60; let py = ltY + 80;
       let ptP = { id: uid(), name: 'P', nodes: [{id:uid(), t:'2', x:px, y:pz, pairId:'n1P'}, {id:'n1P', t:'1', x:px, y:py}] };
@@ -317,6 +212,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'pertenencias') {
+      dataStr = "";
       if (['max_pend', 'max_inc', 'horiz', 'front'].includes(opts.pertSub)) {
           planes.push(genPlane('α', opts.pertPlaneType, true, 0));
           title = `Trazar una recta de tipo ${opts.pertSub.replace('_',' ')} contenida en el plano α (${opts.pertPlaneType.replace('_', ' ')}).`;
@@ -344,6 +240,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       }
     }
     else if (t === 'abatimientos') {
+      dataStr = "";
       let pA = genPlane('α', 'oblicuo', true, -60); planes.push(pA);
       let px = originX + 60; let pz = ltY - 60; let py = ltY + 70;
       let planoNombre = opts.abatPlano === 'ph' ? 'Horizontal' : 'Vertical';
@@ -361,118 +258,151 @@ export const useStore = create<CadStore>()((set, get) => ({
               let figPts: any[] = [];
               for(let i=0; i<pLen; i++) {
                   let nx = originX + (10 + i*30)*SF; let nz = ltY - (30 + rand(0,20))*SF; let ny = ltY + (20 + rand(0,20))*SF;
-                  figPts.push({ id:uid(), name: String.fromCharCode(65+i), nodes: [{id:uid(), t:'2', x:nx, y:nz, pairId:'n1'+i}, {id:'n1'+i, t:'1', x:nx, y:ny}] });
+                  let nn = String.fromCharCode(65+i);
+                  figPts.push({ id:uid(), name: nn, nodes: [{id:uid(), t:'2', x:nx, y:nz, pairId:'n1'+i}, {id:'n1'+i, t:'1', x:nx, y:ny}] });
               }
               pts.push(...figPts);
               for(let i=0; i<pLen; i++) {
                   let next = (i+1)%pLen;
-                  segments.push({ id:uid(), label:'', p1:{x:figPts[i].nodes[0].x, y:figPts[i].nodes[0].y}, p2:{x:figPts[next].nodes[0].x, y:figPts[next].nodes[0].y} }, { id:uid(), label:'', p1:{x:figPts[i].nodes[1].x, y:figPts[i].nodes[1].y}, p2:{x:figPts[next].nodes[1].x, y:figPts[next].nodes[1].y} });
+                  segments.push({ id:uid(), label:'', p1:{x:figPts[i].nodes[0].x, y:figPts[i].nodes[0].y}, p2:{x:figPts[next].nodes[0].x, y:figPts[next].nodes[0].y} });
+                  segments.push({ id:uid(), label:'', p1:{x:figPts[i].nodes[1].x, y:figPts[i].nodes[1].y}, p2:{x:figPts[next].nodes[1].x, y:figPts[next].nodes[1].y} });
               }
               title = `Dadas las proyecciones de la figura contenida en el plano α, hallar su verdadera magnitud abatiendo sobre el plano ${planoNombre}.`;
+          }
+      } else {
+          // Estado: Verdadera Magnitud (Desabatir)
+          let abatedTraceLabel = opts.abatPlano === 'ph' ? '(α2)' : '(α1)';
+          let abatedY = opts.abatPlano === 'ph' ? ltY + 120 : ltY - 120;
+          segments.push({ id:uid(), label: abatedTraceLabel, p1: {x: pA.vX, y: ltY}, p2: {x: pA.vX + 150, y: abatedY} });
+
+          if (opts.abatElem === 'punto') {
+              pts.push({ id:uid(), name: '(A)', nodes: [{id:uid(), t:'', x:px, y: opts.abatPlano==='ph'?py:pz}] });
+              title = `Dado el punto A abatido sobre el plano ${planoNombre}, hallar sus proyecciones en α.`;
+          } else if (opts.abatElem === 'recta') {
+              segments.push({ id:uid(), label:'(r)', p1:{x:px-40, y:opts.abatPlano==='ph'?py-20:pz+20}, p2:{x:px+60, y:opts.abatPlano==='ph'?py+40:pz-30} });
+              title = `Dada la recta r abatida sobre el plano ${planoNombre}, hallar sus proyecciones en α.`;
+          } else {
+              let pLen = opts.abatLados || 3;
+              let figPts: any[] = [];
+              for(let i=0; i<pLen; i++) {
+                  let nx = originX + (10 + i*30)*SF; let ny = opts.abatPlano==='ph' ? ltY + (40 + rand(0,20))*SF : ltY - (40 + rand(0,20))*SF;
+                  let nn = String.fromCharCode(65+i);
+                  figPts.push({ id:uid(), name: `(${nn})`, nodes: [{id:uid(), t:'', x:nx, y:ny}] });
+              }
+              pts.push(...figPts);
+              for(let i=0; i<pLen; i++) {
+                  let next = (i+1)%pLen;
+                  segments.push({ id:uid(), label:'', p1:{x:figPts[i].nodes[0].x, y:figPts[i].nodes[0].y}, p2:{x:figPts[next].nodes[0].x, y:figPts[next].nodes[0].y} });
+              }
+              title = `Dada la figura abatida sobre el plano ${planoNombre}, hallar sus proyecciones en α.`;
           }
       }
     }
 
-    if (opts.reqPP) title += " Dibujar tercera proyección.";
+    if (opts.reqPP) {
+      title += " Dibujar tercera proyección.";
+    }
 
     const newEx: Exercise = {
       id: uid(), type: t, title, w, h, dataStr,
       state: { ltY, originX, ppX: 750, reqRegla: opts.reqRegla, reqPP: opts.reqPP, reqOrigin: opts.reqOrigin, planes, segments, pts, bounds: { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 } }
     };
-    
-    set(state => {
-        let newList = [...state.exercises, newEx];
-        return { exercises: newList };
-    });
-    get().commitHistory();
-  },
+    return { exercises: [...state.exercises, newEx] };
+  }),
 
-  removeExercise: (id) => { set(st => ({ exercises: st.exercises.filter(e => e.id !== id) })); get().commitHistory(); },
-  updateBoxSize: (id, w, h) => set(st => ({ exercises: st.exercises.map(ex => ex.id === id ? { ...ex, w, h } : ex) })),
+  removeExercise: (id) => set((state) => ({ exercises: state.exercises.filter(e => e.id !== id) })),
+  updateBoxSize: (id, w, h) => set((state) => ({ exercises: state.exercises.map(ex => ex.id === id ? { ...ex, w, h } : ex) })),
 
-  addFreeElement: (exId, elemType) => {
-    set(st => ({ exercises: st.exercises.map(ex => {
+  addFreeElement: (exId, elemType) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state }; let ox = s.originX; let oy = s.ltY;
       if (elemType === 'punto') {
-          s.pts = [...s.pts, { id:uid(), name: String.fromCharCode(65 + s.pts.length), nodes:[{id:uid(), t:'2', x:ox+50, y:oy-50, pairId:'nf1'}, {id:'nf1', t:'1', x:ox+50, y:oy+50}] }];
+          const nextL = String.fromCharCode(65 + s.pts.length);
+          s.pts = [...s.pts, { id:uid(), name: nextL, nodes:[{id:uid(), t:'2', x:ox+50, y:oy-50, pairId:'nf1'}, {id:'nf1', t:'1', x:ox+50, y:oy+50}] }];
       } else if (elemType === 'recta') {
-          const nL = String.fromCharCode(114 + Math.floor(s.segments.length / 2));
-          s.segments = [...s.segments, { id:uid(), label:`${nL}2`, p1:{x:ox-50, y:oy-20}, p2:{x:ox+50, y:oy-70} }, { id:uid(), label:`${nL}1`, p1:{x:ox-50, y:oy+30}, p2:{x:ox+50, y:oy+80} }];
+          const nextL = String.fromCharCode(114 + Math.floor(s.segments.length / 2));
+          s.segments = [...s.segments, { id:uid(), label:`${nextL}2`, p1:{x:ox-50, y:oy-20}, p2:{x:ox+50, y:oy-70} }, { id:uid(), label:`${nextL}1`, p1:{x:ox-50, y:oy+30}, p2:{x:ox+50, y:oy+80} }];
       } else if (elemType === 'plano') {
-          const greek = ['α','β','γ','δ','ε'];
-          s.planes = [...s.planes, { id:uid(), name: greek[s.planes.length % 5], type:'oblicuo', vX:ox-70, p1:{x:ox+100, y:oy+150}, p2:{x:ox+100, y:oy-150} }];
+          const greek = ['α','β','γ','δ','ε','ζ','η'];
+          const nextL = greek[s.planes.length % greek.length];
+          s.planes = [...s.planes, { id:uid(), name: nextL, type:'oblicuo', vX:ox-70, p1:{x:ox+100, y:oy+150}, p2:{x:ox+100, y:oy-150} }];
       }
       return { ...ex, state: s };
-    })}));
-    get().commitHistory();
-  },
+    })
+  })),
 
-  removeElement: (exId, elemType, elemId) => {
-    set(st => ({ 
-      constraints: st.constraints.filter(c => c.elem1Id !== elemId && c.elem2Id !== elemId),
-      exercises: st.exercises.map(ex => {
-        if (ex.id !== exId) return ex;
-        let s = { ...ex.state };
-        if (elemType === 'punto') s.pts = s.pts.filter(p => p.id !== elemId && !p.nodes.some(n=>n.id===elemId));
-        else if (elemType === 'recta') s.segments = s.segments.filter(sg => sg.id !== elemId);
-        else if (elemType === 'plano') s.planes = s.planes.filter(pl => pl.id !== elemId);
-        return { ...ex, state: s };
-      })
-    }));
-    get().commitHistory();
-  },
+  removeElement: (exId, elemType, elemId) => set((state) => ({
+    exercises: state.exercises.map(ex => {
+      if (ex.id !== exId) return ex;
+      let s = { ...ex.state };
+      if (elemType === 'punto') s.pts = s.pts.filter(p => p.id !== elemId && !p.nodes.some(n=>n.id===elemId));
+      else if (elemType === 'recta') s.segments = s.segments.filter(sg => sg.id !== elemId);
+      else if (elemType === 'plano') s.planes = s.planes.filter(pl => pl.id !== elemId);
+      return { ...ex, state: s };
+    })
+  })),
 
-  updateName: (exId, elemType, elemId, newName) => {
-    set(st => ({ exercises: st.exercises.map(ex => {
+  updateName: (exId, elemType, elemId, newName) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if(ex.id !== exId) return ex;
       let s = {...ex.state};
       if(elemType === 'punto') s.pts = s.pts.map(p => p.id === elemId ? {...p, name: newName} : p);
       else if(elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? {...seg, label: newName} : seg);
       else if(elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
       return {...ex, state: s};
-    })}));
-    get().commitHistory();
-  },
+    })
+  })),
 
-  updateExerciseText: (exId, field, text) => {
-    set(st => ({ exercises: st.exercises.map(ex => ex.id === exId ? { ...ex, [field]: text } : ex) }));
-    get().commitHistory();
-  },
-
-  togglePlaneType: (exId, planeId) => {
-    set(st => ({ exercises: st.exercises.map(ex => {
+  updateExerciseText: (exId, field, text) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => pl.id === planeId ? { ...pl, type: pl.type === 'paralelo_lt' ? 'oblicuo' : 'paralelo_lt' } : pl )}};
-    })}));
-    get().commitHistory();
-  },
+      return { ...ex, [field]: text };
+    })
+  })),
 
-  toggleLineStyle: (exId, elemType, elemId) => {
-    set(st => ({ exercises: st.exercises.map(ex => {
+  togglePlaneType: (exId, planeId) => set((state) => ({
+    exercises: state.exercises.map(ex => {
+      if (ex.id !== exId) return ex;
+      return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => {
+        if (pl.id !== planeId) return pl;
+        return { ...pl, type: pl.type === 'paralelo_lt' ? 'oblicuo' : 'paralelo_lt' };
+      })}};
+    })
+  })),
+
+  toggleLineStyle: (exId, elemType, elemId) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
-      const nSt = (c?: string) => c === 'solid' ? 'dashed' : c === 'dashed' ? undefined : 'solid';
-      if (elemType === 'recta') s.segments = s.segments.map(sg => sg.id === elemId ? { ...sg, customStyle: nSt(sg.customStyle) } : sg);
-      else if (elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nSt(pl.customStyle) } : pl);
+      const nextStyle = (current?: string) => current === 'solid' ? 'dashed' : current === 'dashed' ? undefined : 'solid';
+      
+      if (elemType === 'recta') {
+        s.segments = s.segments.map(seg => seg.id === elemId ? { ...seg, customStyle: nextStyle(seg.customStyle) } : seg);
+      } else if (elemType === 'plano') {
+        s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nextStyle(pl.customStyle) } : pl);
+      }
       return { ...ex, state: s };
-    })}));
-    get().commitHistory();
-  },
+    })
+  })),
 
-  updateNode: (exId, ptId, nodeId, newX, newY) => set(st => ({
-    exercises: st.exercises.map(ex => {
+  updateNode: (exId, ptId, nodeId, newX, newY) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
+      
       let thePoint = s.pts.find(p => p.id === ptId);
       let theNode = thePoint?.nodes.find(n => n.id === nodeId);
+      
       if (theNode) {
          let dx = newX - theNode.x;
          let pairNode = thePoint?.nodes.find(n => n.id === theNode?.pairId);
+
          s.segments = s.segments.map(seg => {
              let ns = {...seg};
              if (Math.abs(seg.p1.x - theNode!.x) < 1 && Math.abs(seg.p1.y - theNode!.y) < 1) ns.p1 = {x: newX, y: newY};
              if (Math.abs(seg.p2.x - theNode!.x) < 1 && Math.abs(seg.p2.y - theNode!.y) < 1) ns.p2 = {x: newX, y: newY};
+             
              if (pairNode) {
                  if (Math.abs(seg.p1.x - pairNode.x) < 1 && Math.abs(seg.p1.y - pairNode.y) < 1) ns.p1 = {x: pairNode.x + dx, y: pairNode.y};
                  if (Math.abs(seg.p2.x - pairNode.x) < 1 && Math.abs(seg.p2.y - pairNode.y) < 1) ns.p2 = {x: pairNode.x + dx, y: pairNode.y};
@@ -480,74 +410,97 @@ export const useStore = create<CadStore>()((set, get) => ({
              return ns;
          });
       }
-      s.pts = s.pts.map(p => p.id === ptId ? { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, x: newX, y: newY } : (n.pairId === nodeId ? { ...n, x: newX } : n)) } : p);
+
+      s.pts = s.pts.map(p => {
+            if (p.id !== ptId) return p;
+            return { ...p, nodes: p.nodes.map(n => {
+                if (n.id === nodeId) return { ...n, x: newX, y: newY };
+                if (n.pairId === nodeId) return { ...n, x: newX }; 
+                return n;
+              }) }
+      });
       return { ...ex, state: s };
     })
   })),
 
-  updatePlane: (exId, planeId, newVX) => set(st => ({
-    exercises: st.exercises.map(ex => {
+  updatePlane: (exId, planeId, newVX) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      let cloned = JSON.parse(JSON.stringify(ex)) as Exercise;
-      let pl = cloned.state.planes.find(p => p.id === planeId);
-      if (pl) {
-        let dx = newVX - pl.vX; pl.vX = newVX; pl.p1.x += dx; pl.p2.x += dx;
-        st.constraints.filter(c => c.exId === exId && (c.elem1Id === planeId || c.elem2Id === planeId)).forEach(c => enforceConstraintPair(cloned, c, planeId));
-      }
-      return cloned;
+      return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => {
+          if (pl.id !== planeId) return pl;
+          let dx = newVX - pl.vX;
+          return { ...pl, vX: newVX, p1: {x: pl.p1.x + dx, y: pl.p1.y}, p2: {x: pl.p2.x + dx, y: pl.p2.y} };
+      }) } };
     })
   })),
 
-  updatePlaneEndpoint: (exId, planeId, traceNum, newX, newY) => set(st => ({
-    exercises: st.exercises.map(ex => {
+  updatePlaneEndpoint: (exId, planeId, traceNum, newX, newY) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      let cloned = JSON.parse(JSON.stringify(ex)) as Exercise;
-      let pl = cloned.state.planes.find(p => p.id === planeId);
-      if (pl) {
-        if (traceNum === 1) pl.p1 = { x: newX, y: newY }; else pl.p2 = { x: newX, y: newY };
-        st.constraints.filter(c => c.exId === exId && (c.elem1Id === planeId || c.elem2Id === planeId)).forEach(c => enforceConstraintPair(cloned, c, planeId));
-      }
-      return cloned;
+      return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => {
+            if (pl.id !== planeId) return pl;
+            if (traceNum === 1) return { ...pl, p1: { x: newX, y: newY } };
+            return { ...pl, p2: { x: newX, y: newY } };
+      }) } };
     })
   })),
 
-  updateSegment: (exId, segId, pointIndex, newX, newY) => set(st => ({
-    exercises: st.exercises.map(ex => {
+  updateSegment: (exId, segId, pointIndex, newX, newY) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      let cloned = JSON.parse(JSON.stringify(ex)) as Exercise;
-      let seg = cloned.state.segments.find(s => s.id === segId);
-      if (seg) {
-        if (pointIndex === 1) seg.p1 = { x: newX, y: newY }; else seg.p2 = { x: newX, y: newY };
-        st.constraints.filter(c => c.exId === exId && (c.elem1Id === segId || c.elem2Id === segId)).forEach(c => enforceConstraintPair(cloned, c, segId));
-      }
-      return cloned;
+      return { ...ex, state: { ...ex.state, segments: ex.state.segments.map(seg => {
+            if (seg.id !== segId) return seg;
+            if (pointIndex === 1) return { ...seg, p1: { x: newX, y: newY } };
+            return { ...seg, p2: { x: newX, y: newY } };
+          }) } };
     })
   })),
 
-  updateSystem: (exId, target, valX, valY) => set(st => ({
-    exercises: st.exercises.map(ex => {
+  updateSystem: (exId, target, valX, valY) => set((state) => ({
+    exercises: state.exercises.map(ex => {
       if (ex.id !== exId) return ex;
-      let s = { ...ex.state }; if (!s.bounds) s.bounds = { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+      let s = { ...ex.state };
+      if (!s.bounds) s.bounds = { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+
       if (target === 'pp') s.ppX = valX;
       else if (target === 'origin') {
-        let dx = valX - s.originX; let dy = valY - s.ltY; s.originX = valX; s.ltY = valY; s.ppX += dx;
+        let dx = valX - s.originX; let dy = valY - s.ltY;
+        s.originX = valX; s.ltY = valY; s.ppX += dx;
         s.planes = s.planes.map(pl => ({...pl, vX: pl.vX + dx, p1: {x: pl.p1.x + dx, y: pl.p1.y + dy}, p2: {x: pl.p2.x + dx, y: pl.p2.y + dy}}));
         s.segments = s.segments.map(sg => ({...sg, p1:{x:sg.p1.x+dx, y:sg.p1.y+dy}, p2:{x:sg.p2.x+dx, y:sg.p2.y+dy}}));
         s.pts = s.pts.map(p => ({...p, nodes: p.nodes.map(n => ({...n, x: n.x+dx, y: n.y+dy}))}));
       }
       else if (target === 'lt1') s.bounds.ltX1 = valX;
       else if (target === 'lt2') s.bounds.ltX2 = valX;
+      else if (target === 'o1') s.bounds.oY1 = valY;
+      else if (target === 'o2') s.bounds.oY2 = valY;
+      else if (target === 'p1') s.bounds.pY1 = valY;
+      else if (target === 'p2') s.bounds.pY2 = valY;
+
       return { ...ex, state: s };
     })
   }))
 }));
 
+// Autoguardado silencioso
+useStore.subscribe((state) => {
+  localStorage.setItem('diedrico_autosave', JSON.stringify(state.exercises));
+});
+
 // ==========================================
 // 2. EL MOTOR DE DIBUJO CAD (KONVA)
 // ==========================================
 function View2D({ ex }: { ex: Exercise }) {
-  const store = useStore();
-  const { ltY, originX, ppX, reqRegla, reqPP, reqOrigin, planes, pts, segments } = ex.state || {};
+  const updateNode = useStore((state) => state.updateNode);
+  const updatePlane = useStore((state) => state.updatePlane);
+  const updatePlaneEndpoint = useStore((state) => state.updatePlaneEndpoint);
+  const updateSegment = useStore((state) => state.updateSegment);
+  const updateSystem = useStore((state) => state.updateSystem);
+  const removeElement = useStore((state) => state.removeElement);
+  const togglePlaneType = useStore((state) => state.togglePlaneType);
+  const isPrinting = useStore((state) => state.isPrinting);
+  
+  const { ltY, originX, ppX, reqRegla, reqPP, reqOrigin, planes, pts, segments } = ex.state;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ w: 800, h: 400 });
@@ -561,9 +514,11 @@ function View2D({ ex }: { ex: Exercise }) {
     return () => obs.disconnect();
   }, []);
 
-  const scale = Math.min((dim.w || 800) / 800, (dim.h || 400) / 400) || 1;
-  const offsetX = ((dim.w || 800) - 800 * scale) / 2;
-  const offsetY = ((dim.h || 400) - 400 * scale) / 2;
+  const scale = Math.min(dim.w / 800, dim.h / 400) || 1;
+  const W = 800; const H = 400;
+  const offsetX = (dim.w - W * scale) / 2;
+  const offsetY = (dim.h - H * scale) / 2;
+
   const sc = (val: number) => val / scale;
   const getFont = (size: number, weight = "") => `${weight} ${sc(size)}px Arial`.trim();
 
@@ -579,11 +534,12 @@ function View2D({ ex }: { ex: Exercise }) {
   };
 
   const drawScene = (ctx: any) => {
-    const b = ex.state?.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+    const b = ex.state.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+
     let dynLabels: {text: string, x: number, y: number, font: string}[] = [];
     const queueLabel = (text: string, x: number, y: number, font = getFont(15, "bold")) => { dynLabels.push({text, x, y, font}); };
 
-    const drawTrueVisibilitySegmentLocal = (seg: ExSegment, stSegments: ExSegment[], isVerticalProj: boolean) => {
+    const drawTrueVisibilitySegmentLocal = (seg: ExSegment, stSegments: ExSegment[], ltY: number, isVerticalProj: boolean) => {
       if (seg.customStyle === 'dashed' || (!seg.customStyle && seg.isDashed)) {
          ctx.beginPath(); ctx.setLineDash([sc(5), sc(5)]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
          if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2, (seg.p1.y+seg.p2.y)/2); return;
@@ -595,7 +551,12 @@ function View2D({ ex }: { ex: Exercise }) {
 
       let tVals = [0, 1];
       let prefix = seg.label.replace(/[12]/g, '');
-      let otherSeg = stSegments.find(s => s.label === prefix + (isVerticalProj ? '1' : '2')) || (isVerticalProj ? stSegments.find(s => s.label.includes('1')) : stSegments.find(s => s.label.includes('2')));
+      let otherSeg = stSegments.find(s => s.label === prefix + (isVerticalProj ? '1' : '2'));
+
+      if (!otherSeg) {
+          let segR2 = stSegments.find(s => s.label.includes('2')); let segR1 = stSegments.find(s => s.label.includes('1'));
+          otherSeg = isVerticalProj ? segR1 : segR2;
+      }
 
       if(!otherSeg) {
           let in1st = isVerticalProj ? (seg.p1.y < ltY) : (seg.p1.y > ltY);
@@ -607,8 +568,10 @@ function View2D({ ex }: { ex: Exercise }) {
       let dy = seg.p2.y - seg.p1.y;
       if (Math.abs(dy) > 0.01) { let tThis = (ltY - seg.p1.y) / dy; if (tThis > 0 && tThis < 1) tVals.push(tThis); }
 
-      let dyOther = (otherSeg.p2.y - otherSeg.p1.y); let dx = seg.p2.x - seg.p1.x; let dxOther = (otherSeg.p2.x - otherSeg.p1.x);
-      if (Math.abs(dyOther) > 0.01 && Math.abs(dx) > 0.01) {
+      let dyOther = otherSeg ? (otherSeg.p2.y - otherSeg.p1.y) : 0;
+      let dx = seg.p2.x - seg.p1.x; let dxOther = otherSeg ? (otherSeg.p2.x - otherSeg.p1.x) : 0;
+      
+      if (otherSeg && Math.abs(dyOther) > 0.01 && Math.abs(dx) > 0.01) {
           let xOtherTrace = otherSeg.p1.x + (ltY - otherSeg.p1.y) * dxOther / dyOther;
           let tOtherMap = (xOtherTrace - seg.p1.x) / dx;
           if (tOtherMap > 0 && tOtherMap < 1) tVals.push(tOtherMap);
@@ -621,7 +584,12 @@ function View2D({ ex }: { ex: Exercise }) {
           let tMid = (tA + tB) / 2;
           let xMid = seg.p1.x + tMid * dx; let yMid = seg.p1.y + tMid * dy;
           let yOtherMid = 0;
-          if (Math.abs(dxOther) > 0.01) { let tOther = (xMid - otherSeg.p1.x) / dxOther; yOtherMid = otherSeg.p1.y + tOther * dyOther; } else { yOtherMid = (otherSeg.p1.y + otherSeg.p2.y) / 2; }
+          
+          if (otherSeg) {
+              if (Math.abs(dxOther) > 0.01) { let tOther = (xMid - otherSeg.p1.x) / dxOther; yOtherMid = otherSeg.p1.y + tOther * dyOther; } 
+              else { yOtherMid = (otherSeg.p1.y + otherSeg.p2.y) / 2; }
+          }
+
           let y1 = isVerticalProj ? yOtherMid : yMid; let y2 = isVerticalProj ? yMid : yOtherMid;
           let is1stQ = (y2 < ltY) && (y1 > ltY);
 
@@ -634,7 +602,9 @@ function View2D({ ex }: { ex: Exercise }) {
 
     ctx.strokeStyle = "black"; ctx.lineWidth = 2.2;
     ctx.beginPath(); ctx.moveTo(b.ltX1, ltY); ctx.lineTo(b.ltX2, ltY); ctx.stroke();
-    ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(b.ltX1 + 10, ltY + 6); ctx.lineTo(b.ltX1 + 25, ltY + 6); ctx.moveTo(b.ltX2 - 25, ltY + 6); ctx.lineTo(b.ltX2 - 10, ltY + 6); ctx.stroke();
+    ctx.lineWidth = 1.2; ctx.beginPath(); 
+    ctx.moveTo(b.ltX1 + 10, ltY + 6); ctx.lineTo(b.ltX1 + 25, ltY + 6); 
+    ctx.moveTo(b.ltX2 - 25, ltY + 6); ctx.lineTo(b.ltX2 - 10, ltY + 6); ctx.stroke();
 
     if (reqRegla) {
       ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(originX, b.oY1); ctx.lineTo(originX, b.oY2);
@@ -658,10 +628,8 @@ function View2D({ ex }: { ex: Exercise }) {
       drawHaloText(ctx, "PP", ppX + sc(6), b.pY1 + sc(30), getFont(16, "bold"));
     }
 
-    (planes || []).forEach((pl: ExPlane) => {
-      const isSel = store.selectedElements.some(s => s.id === pl.id);
-      ctx.strokeStyle = isSel ? "#ff9f43" : "black"; 
-      ctx.lineWidth = isSel ? 3.5 : 2.2;
+    planes.forEach((pl: ExPlane) => {
+      ctx.strokeStyle = "black"; ctx.lineWidth = 2.2;
       
       const applyDash = (isAutoDashed: boolean) => {
           if (pl.customStyle === 'solid') ctx.setLineDash([]);
@@ -670,47 +638,56 @@ function View2D({ ex }: { ex: Exercise }) {
       };
 
       if (pl.type === 'horizontal') {
-        applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke(); ctx.setLineDash([]);
+        applyDash(false);
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke(); ctx.setLineDash([]);
         if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
       } else if (pl.type === 'frontal') {
-        applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
+        applyDash(false);
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
         if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
       } else if (pl.type === 'paralelo_lt') {
-        applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
+        applyDash(false);
+        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
         if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
         if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
       } else {
-        applyDash(pl.p2.y >= ltY); ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
-        applyDash(pl.p1.y <= ltY); ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
+        applyDash(pl.p2.y >= ltY);
+        ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
+        
+        applyDash(pl.p1.y <= ltY);
+        ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke(); 
+        
+        ctx.setLineDash([]);
         if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
         if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
       }
     });
 
-    (segments || []).forEach((seg: ExSegment) => {
-        const isSel = store.selectedElements.some(s => s.id === seg.id);
-        ctx.strokeStyle = isSel ? "#ff9f43" : "black"; 
-        ctx.lineWidth = isSel ? 3.5 : 2.2;
+    segments.forEach((seg: ExSegment) => {
         const isV = seg.label.includes('2');
-        drawTrueVisibilitySegmentLocal(seg, segments, isV);
+        drawTrueVisibilitySegmentLocal(seg, segments, ltY, isV);
     });
 
     ctx.strokeStyle = "#888"; ctx.setLineDash([sc(5), sc(5)]); ctx.lineWidth = sc(1);
-    (pts || []).forEach((p: any) => { if(p.nodes.length === 2) { ctx.beginPath(); ctx.moveTo(p.nodes[0].x, p.nodes[0].y); ctx.lineTo(p.nodes[1].x, p.nodes[1].y); ctx.stroke(); } });
+    pts.forEach((p: any) => { if(p.nodes.length === 2) { ctx.beginPath(); ctx.moveTo(p.nodes[0].x, p.nodes[0].y); ctx.lineTo(p.nodes[1].x, p.nodes[1].y); ctx.stroke(); } });
     ctx.setLineDash([]);
     
     ctx.fillStyle = "black";
-    (pts || []).forEach((p: any) => {
+    pts.forEach((p: any) => {
       p.nodes.forEach((n: ExNode) => { 
         ctx.beginPath(); ctx.strokeStyle = "black"; ctx.lineWidth = sc(1.5);
-        let cs = sc(5); ctx.moveTo(n.x, n.y - cs); ctx.lineTo(n.x, n.y + cs); ctx.moveTo(n.x - cs, n.y); ctx.lineTo(n.x + cs, n.y); ctx.stroke();
+        let cs = sc(5);
+        ctx.moveTo(n.x, n.y - cs); ctx.lineTo(n.x, n.y + cs); 
+        ctx.moveTo(n.x - cs, n.y); ctx.lineTo(n.x + cs, n.y); 
+        ctx.stroke();
         if (p.name) queueLabel(`${p.name}${n.t}`, n.x + sc(8), n.y - sc(8)); 
       });
     });
 
-    // ANTI-COLISIONES DE TEXTOS
-    let mergedLabels: any[] = []; let skip = new Set();
+    // SISTEMA EXPERTO ANTICOLISIONES
+    let mergedLabels: any[] = [];
+    let skip = new Set();
     for(let i=0; i<dynLabels.length; i++) {
         if(skip.has(i)) continue;
         let group = [dynLabels[i]];
@@ -721,72 +698,90 @@ function View2D({ ex }: { ex: Exercise }) {
         }
         if(group.length > 1) {
             let combinedText = group.map(g => g.text).join(' ≡ ');
-            let avgX = group.reduce((sum, g) => sum + g.x, 0) / group.length; let avgY = group.reduce((sum, g) => sum + g.y, 0) / group.length;
+            let avgX = group.reduce((sum, g) => sum + g.x, 0) / group.length;
+            let avgY = group.reduce((sum, g) => sum + g.y, 0) / group.length;
             mergedLabels.push({ text: combinedText, x: avgX, y: avgY, font: group[0].font });
-        } else mergedLabels.push(dynLabels[i]);
+        } else {
+            mergedLabels.push(dynLabels[i]);
+        }
     }
 
     for(let iter=0; iter<30; iter++) {
         for(let i=0; i<mergedLabels.length; i++) {
             for(let j=i+1; j<mergedLabels.length; j++) {
                 let a = mergedLabels[i]; let b = mergedLabels[j];
-                ctx.font = a.font; let aW = ctx.measureText(a.text).width; ctx.font = b.font; let bW = ctx.measureText(b.text).width;
-                let dx = a.x - b.x; let dy = a.y - b.y; let minDistX = (aW + bW)/2 + sc(8); let minDistY = sc(15) + sc(8);
+                ctx.font = a.font; let aW = ctx.measureText(a.text).width;
+                ctx.font = b.font; let bW = ctx.measureText(b.text).width;
+                let aH = sc(15); let bH = sc(15);
+                
+                let dx = a.x - b.x; let dy = a.y - b.y;
+                let minDistX = (aW + bW)/2 + sc(8); let minDistY = (aH + bH)/2 + sc(8);
+                
                 if (Math.abs(dx) < minDistX && Math.abs(dy) < minDistY) {
                     if (dx === 0 && dy === 0) { dx = 0.1; dy = 0.1; }
                     let overlapX = minDistX - Math.abs(dx); let overlapY = minDistY - Math.abs(dy);
-                    if (overlapX < overlapY) { let pushX = overlapX * (dx > 0 ? 1 : -1) * 0.5; a.x += pushX; b.x -= pushX; } 
-                    else { let pushY = overlapY * (dy > 0 ? 1 : -1) * 0.5; a.y += pushY; b.y -= pushY; }
+                    if (overlapX < overlapY) {
+                        let pushX = overlapX * (dx > 0 ? 1 : -1) * 0.5;
+                        a.x += pushX; b.x -= pushX;
+                    } else {
+                        let pushY = overlapY * (dy > 0 ? 1 : -1) * 0.5;
+                        a.y += pushY; b.y -= pushY;
+                    }
                 }
             }
         }
     }
-    mergedLabels.forEach(lbl => drawHaloText(ctx, lbl.text, lbl.x, lbl.y, lbl.font));
+
+    mergedLabels.forEach(lbl => {
+        drawHaloText(ctx, lbl.text, lbl.x, lbl.y, lbl.font);
+    });
   };
 
-  const b = ex.state?.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+  const b = ex.state.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
 
   return (
     <div style={{width: '100%', height: '100%', position: 'relative', overflow: 'hidden'}}>
       <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
-        <Stage width={dim.w || 800} height={dim.h || 400} 
-               onDragEnd={() => { setSelectedId(null); store.commitHistory(); }}
-               onClick={(e)=>{
-                 if(e.evt.button===0) { 
-                   setContextMenu(null); 
-                   if (e.target === e.target.getStage()) { setSelectedId(null); store.clearSelection(); }
-                 }
-               }}
+        <Stage width={dim.w} height={dim.h} 
+               onDragEnd={() => setSelectedId(null)}
+               onClick={(e)=>{if(e.evt.button===0) { setContextMenu(null); if (e.target === e.target.getStage()) setSelectedId(null); }}}
                onContextMenu={(e)=>{
                  e.evt.preventDefault();
                  const stage = e.target.getStage(); const pos = stage?.getPointerPosition();
                  if (!stage || !pos) return;
                  const shapes = stage.getAllIntersections(pos);
                  const handleShapes = shapes.filter((s:any) => (s.getClassName() === 'Circle' || s.getClassName() === 'Line') && s.attrs.name && s.attrs.id);
+                 
                  if (handleShapes.length > 0) {
                    const uniqueMap = new Map();
                    handleShapes.forEach((s:any) => {
-                     let rId = s.attrs.id; if (rId.includes('_')) rId = rId.split('_')[1];
+                     let rId = s.attrs.id;
+                     if (rId.includes('_')) rId = rId.split('_')[1];
+                     
                      let label = s.attrs.name;
                      if (label.includes('Extremo') || label.includes('Recta')) label = 'Recta ' + label.replace(/Extremo |Recta | \(.*/g, '').replace(/[12]/g, '');
                      else if (label.includes('Traza') || label.includes('Plano')) label = 'Plano ' + label.replace(/Traza |Plano | Horizontal | Frontal | Oblicuo /g, '').replace(/[12]/g, '');
                      else if (label.includes('Punto')) label = 'Punto ' + label.replace(/Punto /, '').replace(/[12]/g, '');
-                     if (!uniqueMap.has(rId)) uniqueMap.set(rId, { label: label.trim(), id: s.attrs.id });
+                     
+                     if (!uniqueMap.has(rId)) {
+                       uniqueMap.set(rId, { label: label.trim(), id: s.attrs.id });
+                     }
                    });
                    setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, items: Array.from(uniqueMap.values()) });
-                 } else setContextMenu(null);
+                 } else { setContextMenu(null); }
                }}>
           <Layer scaleX={scale} scaleY={scale} x={offsetX} y={offsetY}>
             <Shape sceneFunc={drawScene} />
             
-            <Group visible={!store.isPrinting}>
-              {/* LÍNEAS INVISIBLES DE HITBOX PARA RECTAS Y PLANOS */}
-              {(segments || []).map(seg => (
-                <Line key={`hit_seg_${seg.id}`} id={`segHit_${seg.id}`} name={`Recta ${seg.label}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} 
-                      onClick={(e)=>{ if(e.evt.button === 0) { e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); setContextMenu(null); } }} />
+            <Group visible={!isPrinting}>
+              {/* LÍNEAS INVISIBLES DE HITBOX PARA RECTAS */}
+              {segments.map(seg => (
+                <Line key={`hit_seg_${seg.id}`} id={`segHit_${seg.id}`} name={`Recta ${seg.label}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} listening={true} />
               ))}
-              {(planes || []).map(pl => {
-                const hitProps = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, onClick: (e:any) => { if(e.evt.button===0) { e.cancelBubble=true; store.selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); setContextMenu(null); } } };
+
+              {/* LÍNEAS INVISIBLES DE HITBOX PARA PLANOS */}
+              {planes.map(pl => {
+                const hitProps = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, listening: true };
                 if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} id={`plHit_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} />;
                 if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} id={`plHit_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} />;
                 if (pl.type === 'paralelo_lt') return <React.Fragment key={`hit_pl_${pl.id}`}><Line id={`plHit2_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} /><Line id={`plHit1_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} /></React.Fragment>;
@@ -798,48 +793,47 @@ function View2D({ ex }: { ex: Exercise }) {
                 );
               })}
 
-              <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt1" ? sc(3) : sc(25)} />
-              <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt2" ? sc(3) : sc(25)} />
+              <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt1" ? sc(3) : sc(25)} />
+              <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt2" ? sc(3) : sc(25)} />
 
-              {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={sc(18)} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => store.updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_origin"} stroke={selectedId === "sys_origin" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_origin" ? sc(3) : sc(25)} />}
+              {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={sc(18)} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_origin"} stroke={selectedId === "sys_origin" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_origin" ? sc(3) : sc(25)} />}
               
               {reqRegla && (
                 <React.Fragment>
-                  <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o1"} stroke={selectedId === "sys_o1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o1" ? sc(3) : sc(25)} />
-                  <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o2"} stroke={selectedId === "sys_o2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o2" ? sc(3) : sc(25)} />
+                  <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o1"} stroke={selectedId === "sys_o1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o1" ? sc(3) : sc(25)} />
+                  <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o2"} stroke={selectedId === "sys_o2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o2" ? sc(3) : sc(25)} />
                 </React.Fragment>
               )}
 
               {reqPP && (
                 <React.Fragment>
-                  <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={sc(12)} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_pp" ? sc(3) : sc(25)} />
-                  <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p1"} stroke={selectedId === "sys_p1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p1" ? sc(3) : sc(25)} />
-                  <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p2"} stroke={selectedId === "sys_p2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p2" ? sc(3) : sc(25)} />
+                  <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={sc(12)} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_pp" ? sc(3) : sc(25)} />
+                  <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p1"} stroke={selectedId === "sys_p1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p1" ? sc(3) : sc(25)} />
+                  <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p2"} stroke={selectedId === "sys_p2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p2" ? sc(3) : sc(25)} />
                 </React.Fragment>
               )}
 
               {planes.map(pl => {
-                if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />;
-                if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />;
-                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} /></React.Fragment>;
+                if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />;
+                if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />;
+                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} /></React.Fragment>;
                 return (
                   <React.Fragment key={pl.id}>
-                    <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => store.updatePlane(ex.id, pl.id, e.target.x())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl_${pl.id}`} stroke={selectedId === `pl_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl_${pl.id}` ? sc(3) : sc(25)} />
-                    <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />
-                    <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />
+                    <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl_${pl.id}`} stroke={selectedId === `pl_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl_${pl.id}` ? sc(3) : sc(25)} />
+                    <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />
+                    <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />
                   </React.Fragment>
                 );
               })}
 
               {segments.map(seg => (
                 <React.Fragment key={seg.id}>
-                  {!seg.isDashed && <><Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg1_${seg.id}`} stroke={selectedId === `seg1_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg1_${seg.id}` ? sc(3) : sc(25)} />
-                  <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg2_${seg.id}`} stroke={selectedId === `seg2_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg2_${seg.id}` ? sc(3) : sc(25)} /></>}
+                  {!seg.isDashed && <><Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg1_${seg.id}`} stroke={selectedId === `seg1_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg1_${seg.id}` ? sc(3) : sc(25)} />
+                  <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg2_${seg.id}`} stroke={selectedId === `seg2_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg2_${seg.id}` ? sc(3) : sc(25)} /></>}
                 </React.Fragment>
               ))}
               {pts.map(p => p.nodes.map(n => (
-                <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => store.updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'punto', p.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pt_${n.id}`} stroke={selectedId === `pt_${n.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pt_${n.id}` ? sc(3) : sc(25)} 
-                        onClick={(e) => { if(e.evt.button === 0) { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); setContextMenu(null); } }} />
+                <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onDblClick={()=>removeElement(ex.id, 'punto', p.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pt_${n.id}`} stroke={selectedId === `pt_${n.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pt_${n.id}` ? sc(3) : sc(25)} />
               )))}
             </Group>
           </Layer>
@@ -870,7 +864,7 @@ function View2D({ ex }: { ex: Exercise }) {
                            let type: 'recta' | 'plano' = 'recta';
                            let rId = it.id.split('_')[1];
                            if (it.id.startsWith('pl')) type = 'plano';
-                           store.toggleLineStyle(ex.id, type, rId);
+                           useStore.getState().toggleLineStyle(ex.id, type, rId);
                            setContextMenu(null);
                         }} title="Alternar entre continua, discontinua o automática">
                        🔄 Línea
@@ -891,7 +885,7 @@ function View2D({ ex }: { ex: Exercise }) {
                               let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
                               if(thePt) rId = thePt.id;
                           }
-                          store.updateName(ex.id, type, rId, "");
+                          useStore.getState().updateName(ex.id, type, rId, "");
                           setContextMenu(null);
                        }} title="Ocultar el nombre dejándolo en blanco">
                       🆑 Nombre
@@ -912,7 +906,7 @@ function View2D({ ex }: { ex: Exercise }) {
                               let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
                               if(thePt) rId = thePt.id;
                           }
-                          store.removeElement(ex.id, type, rId);
+                          removeElement(ex.id, type, rId);
                           setContextMenu(null);
                        }} title="Borrar elemento entero">
                       🗑️
@@ -923,7 +917,7 @@ function View2D({ ex }: { ex: Exercise }) {
                  <div style={{padding: '6px 10px', cursor: 'pointer', color: 'black', background: '#eccc68', marginTop: '4px', borderRadius: '3px', fontSize: '0.8em', fontWeight: 'bold', textAlign: 'center'}}
                       onClick={() => {
                           const planeId = it.id.split('_')[1];
-                          store.togglePlaneType(ex.id, planeId); setContextMenu(null);
+                          togglePlaneType(ex.id, planeId); setContextMenu(null);
                       }}>
                      ⮂ Alternar Paralelo LT
                  </div>
@@ -937,71 +931,101 @@ function View2D({ ex }: { ex: Exercise }) {
 }
 
 // ==========================================
-// 3. LA INTERFAZ PRINCIPAL COMPLETA 
+// 3. LA INTERFAZ PRINCIPAL (MENÚS Y PAGINACIÓN)
 // ==========================================
 export default function App() {
-  const store = useStore();
+  const { 
+    exercises, addExercise, removeExercise, addFreeElement, updateBoxSize, saveData, loadData,
+    pageSize, fontFamily, fontSize, setPageConfig 
+  } = useStore();
+  
   const [type, setType] = useState('punto_coord');
+  
   const [ptCount, setPtCount] = useState(4);
-  const [lineType, setLineType] = useState('cualquiera');
-  const [lineMethod, setLineMethod] = useState('coord');
+  const [lineMethod, setLineMethod] = useState('coord'); const [lineType, setLineType] = useState('cualquiera');
   const [planeType, setPlaneType] = useState('oblicuo');
   const [quadA, setQuadA] = useState('any'); const [quadB, setQuadB] = useState('any');
   const [reqPP, setReqPP] = useState(false); const [reqRegla, setReqRegla] = useState(false); const [reqOrigin, setReqOrigin] = useState(false);
-  const [intSub, setIntSub] = useState('todas'); const [intP1, setIntP1] = useState('oblicuo'); const [intP2, setIntP2] = useState('oblicuo');
-  const [paraSub, setParaSub] = useState('r_r_pto'); const [perpSub, setPerpSub] = useState('r_p_pto');
-  const [pertSub, setPertSub] = useState('max_pend'); const [pertPlaneType, setPertPlaneType] = useState('oblicuo');
-  const [abatLados, setAbatLados] = useState(3); const [abatElem, setAbatElem] = useState('fig_reg');
-  const [abatEstado, setAbatEstado] = useState('proy'); const [abatPlano, setAbatPlano] = useState('ph');
 
-  const handleAdd = () => { store.addExercise({ type, ptCount, lineMethod, lineType, planeType, quadA, quadB, reqPP, reqRegla, reqOrigin, intSub, intP1, intP2, paraSub, perpSub, pertSub, pertPlaneType, abatElem, abatEstado, abatPlano, abatLados }); };
+  const [intSub, setIntSub] = useState('todas'); const [intP1, setIntP1] = useState('oblicuo'); const [intP2, setIntP2] = useState('oblicuo');
+  const [paraSub, setParaSub] = useState('r_r_pto');
+  const [perpSub, setPerpSub] = useState('r_p_pto');
+  const [pertSub, setPertSub] = useState('max_pend'); const [pertPlaneType, setPertPlaneType] = useState('oblicuo');
+  const [abatElem, setAbatElem] = useState('punto'); const [abatEstado, setAbatEstado] = useState('proy'); const [abatPlano, setAbatPlano] = useState('ph');
+  const [abatLados, setAbatLados] = useState(3);
+
+  const handleAdd = () => { addExercise({ type, ptCount, lineMethod, lineType, planeType, quadA, quadB, reqPP, reqRegla, reqOrigin, intSub, intP1, intP2, paraSub, perpSub, pertSub, pertPlaneType, abatElem, abatEstado, abatPlano, abatLados }); };
 
   const handlePrint = () => {
-    store.setPrinting(true);
-    setTimeout(() => { window.print(); store.setPrinting(false); }, 300);
+    useStore.getState().setPrinting(true);
+    setTimeout(() => {
+      window.print();
+      useStore.getState().setPrinting(false);
+    }, 300);
   };
 
   const paginatedExercises = useMemo(() => {
-    let pages: Exercise[][] = []; let currPage: Exercise[] = []; let currY = 0; let rowH = 0; let rowW = 0;
-    (store.exercises || []).forEach(ex => {
-      let hVal = parseInt(ex.h) || 136; let wVal = parseFloat(ex.w) || 50;
+    let pages: Exercise[][] = []; 
+    let currPage: Exercise[] = [];
+    let currY = 0; 
+    let rowH = 0;
+    let rowW = 0;
+    
+    exercises.forEach(ex => {
+      let hVal = parseInt(ex.h) || 136;
+      let wVal = parseFloat(ex.w) || 50;
+
       const MAX_H = pages.length === 0 ? 275 : 305; 
-      if (rowW + wVal <= 101) { rowW += wVal; rowH = Math.max(rowH, hVal); } 
-      else { currY += rowH; rowW = wVal; rowH = hVal; }
-      if (currY + rowH > MAX_H && currPage.length > 0) { pages.push(currPage); currPage = []; currY = 0; rowW = wVal; rowH = hVal; }
+
+      if (rowW + wVal <= 101) { 
+        rowW += wVal;
+        rowH = Math.max(rowH, hVal);
+      } else {
+        currY += rowH;
+        rowW = wVal;
+        rowH = hVal;
+      }
+
+      if (currY + rowH > MAX_H && currPage.length > 0) {
+        pages.push(currPage);
+        currPage = [];
+        currY = 0;
+        rowW = wVal;
+        rowH = hVal;
+      }
       currPage.push(ex);
     });
     if (currPage.length > 0) pages.push(currPage);
     if (pages.length === 0) pages = [[]];
     return pages;
-  }, [store.exercises]);
+  }, [exercises]);
 
-  const PAGE_W = store.pageSize === 'A3' ? '420mm' : '210mm';
+  const PAGE_W = pageSize === 'A3' ? '420mm' : '210mm';
 
   return (
     <>
       <style>{`
-        body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e2f; color: #fff; overflow: hidden; }
-        .app-layout { display: flex; height: 100vh; overflow: hidden; }
-        .sidebar { width: 300px; background: #2a2a40; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; z-index: 100; box-shadow: 2px 0 10px rgba(0,0,0,0.5); flex-shrink: 0; }
-        .main-area { flex: 1; overflow-y: auto; background: #151520; position: relative; padding-top: 60px; }
-        .right-sidebar { width: 280px; background: #2a2a40; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; z-index: 100; box-shadow: -2px 0 10px rgba(0,0,0,0.5); flex-shrink: 0; border-left: 1px solid #444; }
+        body { margin: 0; font-family: 'Segoe UI', sans-serif; background-color: #1e1e2f; color: #fff; }
+        .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 30px; align-items: center; transform-origin: top center; }
         
-        .top-navbar { position: absolute; top: 15px; left: 30px; display: flex; gap: 15px; z-index: 50; }
+        @media screen and (min-width: 769px) and (max-height: 1300px) { .sheet-container { zoom: 0.9; } }
+        @media screen and (min-width: 769px) and (max-height: 1100px) { .sheet-container { zoom: 0.8; } }
+        @media screen and (min-width: 769px) and (max-height: 950px) { .sheet-container { zoom: 0.75; } }
+        @media screen and (min-width: 769px) and (max-height: 850px) { .sheet-container { zoom: 0.65; } }
+        @media screen and (min-width: 769px) and (max-height: 750px) { .sheet-container { zoom: 0.55; } }
         
-        .sheet-container { display: flex; flex-direction: column; gap: 40px; padding: 20px; align-items: center; transform-origin: top center; transition: transform 0.2s ease; }
-        .page-sheet { background: white; width: ${PAGE_W}; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .page-sheet { background: white; width: ${PAGE_W}; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; margin-bottom: 20px; display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease; }
+        
         .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
-        
-        .cajetin { width: ${store.pageSize === 'A3' ? '204mm' : '100%'}; border-right: ${store.pageSize === 'A3' ? '2px solid black' : 'none'}; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; transition: width 0.3s ease; }
+        .cajetin { width: ${pageSize === 'A3' ? '204mm' : '100%'}; border-right: ${pageSize === 'A3' ? '2px solid black' : 'none'}; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; transition: width 0.3s ease; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 10px 12px; font-weight: bold; }
         
         .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
         .exercise-box { display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; }
         
-        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; word-wrap: break-word; line-height: 1.3; font-family: ${store.fontFamily}; font-size: ${store.fontSize}px; text-align: justify; outline: none; }
-        .exercise-data { font-family: ${store.fontFamily}; font-size: ${store.fontSize - 1}px; padding: 4px 10px; text-align: justify; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.3; word-wrap: break-word; }
+        .exercise-title { padding: 6px 10px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; word-wrap: break-word; line-height: 1.3; font-family: ${fontFamily}; font-size: ${fontSize}px; text-align: justify; }
+        .exercise-data { font-family: ${fontFamily}; font-size: ${fontSize - 1}px; padding: 4px 10px; text-align: left; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.3; word-wrap: break-word; text-align: justify; }
         .btn-mini { background: #2ed573; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; }
         
         .side-handle-r { position: absolute; right: -5px; top: 0; bottom: 0; width: 15px; cursor: ew-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
@@ -1009,46 +1033,49 @@ export default function App() {
         .side-handle-b { position: absolute; left: 0; right: 0; bottom: -5px; height: 15px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-b:hover, .side-handle-b:active { background: rgba(0, 210, 255, 0.4); }
         
-        .btn-panel { background: #363654; color: white; border: none; padding: 10px; border-radius: 5px; cursor: pointer; font-weight: bold; transition: background 0.2s; display: flex; justify-content: center; align-items: center; }
-        .btn-panel:hover { background: #00d2ff; color: #000; }
-        .btn-panel:disabled { opacity: 0.5; cursor: not-allowed; }
-        
+        @media (max-width: 768px) {
+          .app-layout { flex-direction: column !important; }
+          .sidebar { width: 100% !important; height: 45vh !important; max-height: 45vh !important; flex: none !important; box-shadow: 0 4px 15px rgba(0,0,0,0.6) !important; }
+          .main-area { width: 100% !important; flex: 1 1 auto !important; height: 55vh !important; }
+          .sheet-container { padding: 10px !important; zoom: 1 !important; }
+        }
         @media print { 
           body, html { background: white; height: auto !important; overflow: visible !important; } 
           .app-layout, .main-area { height: auto !important; overflow: visible !important; display: block !important; }
           .no-print { display: none !important; } 
-          .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; transform: none !important; } 
-          @page { size: ${store.pageSize === 'A3' ? 'A3 landscape' : 'A4 portrait'}; margin: 0; }
+          .sheet-container { padding: 0 !important; gap: 0 !important; height: auto !important; overflow: visible !important; display: block !important; zoom: 1 !important; transform: none !important; } 
+          
+          @page { size: ${pageSize === 'A3' ? 'A3 landscape' : 'A4 portrait'}; margin: 0; }
           .page-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: ${PAGE_W}; height: 297mm; } 
+          
           .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; }
           .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
           .exercise-box { resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
         }
       `}</style>
       
-      <div className="app-layout">
-        
-        {/* COLUMNA IZQUIERDA ORIGINAL */}
-        <div className="sidebar no-print">
+      <div className="app-layout" style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+        <div className="sidebar no-print" style={{ width: '300px', background: '#2a2a40', padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', overflow: 'auto', zIndex: 100, boxShadow: '2px 0 10px rgba(0,0,0,0.5)', flexShrink: 0 }}>
           <h2 style={{ color: '#00d2ff', margin: 0 }}>Editor Diédrico CAD</h2>
           
           <div style={{ background: '#1e1e2f', padding: '15px', borderRadius: '8px' }}>
             <label style={{ color: '#00d2ff', fontWeight: 'bold' }}>Configuración de Página:</label>
-            <select value={store.pageSize} onChange={e => store.setPageConfig({pageSize: e.target.value as any})} style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', borderRadius: '4px', marginBottom: '10px' }}>
-              <option value="A4">A4 Norma (Vertical)</option>
-              <option value="A3">A3 Técnico (Horizontal)</option>
+            <select value={pageSize} onChange={e => setPageConfig({pageSize: e.target.value as 'A4'|'A3'})} style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', borderRadius: '4px', marginBottom: '10px' }}>
+              <option value="A4">A4 (Vertical)</option>
+              <option value="A3">A3 (Horizontal)</option>
             </select>
 
             <label style={{ color: '#00d2ff', fontWeight: 'bold' }}>Fuente (Letra):</label>
-            <select value={store.fontFamily} onChange={e => store.setPageConfig({fontFamily: e.target.value})} style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', borderRadius: '4px', marginBottom: '10px' }}>
+            <select value={fontFamily} onChange={e => setPageConfig({fontFamily: e.target.value})} style={{ width: '100%', padding: '8px', marginTop: '5px', background: '#363654', color: 'white', border: 'none', borderRadius: '4px', marginBottom: '10px' }}>
               <option value="'Segoe UI', sans-serif">Segoe UI</option>
               <option value="Arial, sans-serif">Arial</option>
               <option value="'Times New Roman', serif">Times New Roman</option>
               <option value="'Courier New', monospace">Courier New</option>
+              <option value="'Georgia', serif">Georgia</option>
             </select>
 
-            <label style={{ color: '#00d2ff', fontWeight: 'bold', display:'block', marginBottom:'5px' }}>Tamaño Letra ({store.fontSize}px):</label>
-            <input type="range" min="10" max="24" value={store.fontSize} onChange={e => store.setPageConfig({fontSize: Number(e.target.value)})} style={{ width: '100%', marginBottom: '15px' }} />
+            <label style={{ color: '#00d2ff', fontWeight: 'bold' }}>Tamaño Letra ({fontSize}px):</label>
+            <input type="range" min="10" max="24" value={fontSize} onChange={e => setPageConfig({fontSize: Number(e.target.value)})} style={{ width: '100%', marginTop: '5px', marginBottom: '15px' }} />
             
             <hr style={{ border: 'none', borderTop: '1px solid #444', marginBottom: '15px' }} />
 
@@ -1060,7 +1087,7 @@ export default function App() {
               <option value="abatimientos">8. Abatimientos</option>
             </select>
 
-            {type === 'punto_coord' && (<div style={{marginTop: '10px'}}><label>Nº Puntos:</label><input type="number" value={ptCount} onChange={e=>setPtCount(Number(e.target.value))} min="1" max="10" style={{width:'100%', padding:'12px', fontSize:'16px', boxSizing:'border-box'}} /></div>)}
+            {type === 'punto_coord' && (<div style={{marginTop: '10px'}}><label>Nº Puntos:</label><input type="number" value={ptCount} onChange={e=>setPtCount(Number(e.target.value))} min="1" max="10" style={{width:'100%', padding:'12px', fontSize:'16px'}} /></div>)}
             {type === 'rectas' && (
               <div style={{marginTop: '10px'}}>
                 <label>Método de la Recta:</label><select value={lineMethod} onChange={e=>setLineMethod(e.target.value)} style={{width:'100%', padding:'12px', fontSize:'16px'}}><option value="coord">Por Coordenadas</option><option value="puntos">Por Puntos Dibujados</option><option value="proy">Por Proyecciones</option></select>
@@ -1095,7 +1122,7 @@ export default function App() {
                 {(abatElem === 'fig_reg' || abatElem === 'fig_irreg') && (
                   <div style={{marginTop:'10px'}}>
                     <label>Nº Lados/Vértices:</label>
-                    <input type="number" value={abatLados} onChange={e=>setAbatLados(Number(e.target.value))} min="3" max="10" style={{width:'100%', padding:'12px', fontSize:'16px', marginTop:'5px', boxSizing:'border-box'}} />
+                    <input type="number" value={abatLados} onChange={e=>setAbatLados(Number(e.target.value))} min="3" max="10" style={{width:'100%', padding:'12px', fontSize:'16px', marginTop:'5px'}} />
                   </div>
                 )}
                 <div style={{marginTop:'10px'}}>
@@ -1115,38 +1142,32 @@ export default function App() {
           </div>
           
           <div style={{display: 'flex', gap: '5px', marginTop: 'auto'}}>
-            <button onClick={store.saveData} style={{ flex: 1, background: '#ffa502', padding: '10px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }}>💾 Guardar</button>
-            <button onClick={store.loadData} style={{ flex: 1, background: '#1e90ff', padding: '10px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }}>📂 Cargar</button>
+            <button onClick={saveData} style={{ flex: 1, background: '#ffa502', padding: '10px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Guardar Lámina Localmente">💾 Guardar (Local)</button>
+            <button onClick={loadData} style={{ flex: 1, background: '#1e90ff', padding: '10px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Cargar Lámina Guardada">📂 Cargar (Local)</button>
           </div>
-          <button onClick={store.downloadData} style={{ background: '#2ed573', padding: '10px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', marginTop:'5px' }}>⬇️ Descargar Lámina (.json)</button>
+          <div style={{display: 'flex', gap: '5px', marginTop: '5px'}}>
+            <button onClick={useStore.getState().downloadData} style={{ flex: 1, background: '#2ed573', padding: '10px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px' }} title="Descargar Lámina (.json)">⬇️ Descargar (.json)</button>
+            <label style={{ flex: 1, background: '#3742fa', padding: '10px', color: 'white', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', textAlign: 'center' }} title="Abrir Lámina (.json)">
+              <input type="file" accept=".json" style={{display:'none'}} onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                const r = new FileReader();
+                r.onload = (ev) => {
+                  try { useStore.setState({ exercises: JSON.parse(ev.target?.result as string) }); }
+                  catch(err) { alert("Archivo inválido"); }
+                };
+                r.readAsText(file);
+                e.target.value = '';
+              }} />
+              📁 Abrir (.json)
+            </label>
+          </div>
           <button onClick={handlePrint} style={{ background: '#00d2ff', padding: '15px', border: 'none', fontWeight: 'bold', cursor: 'pointer', borderRadius: '5px', marginTop: '5px', fontSize:'16px' }}>🖨️ Imprimir Lámina</button>
+          <div style={{fontSize:'0.75rem', color:'#aaa', textAlign:'center', marginTop: '5px'}}><b>Toque doble</b> o mantén presionado para editar o borrar.</div>
         </div>
 
-        {/* ESPACIO DE TRABAJO PRINCIPAL */}
-        <div className="main-area">
-          
-          {/* BARRA SUPERIOR FLOTANTE CON DESHACER/REHACER Y ZOOM */}
-          <div className="top-navbar no-print">
-            <div style={{display:'flex', gap:'8px', background:'#2a2a40', padding:'8px', borderRadius:'8px', border:'1px solid #444', boxShadow:'0 4px 6px rgba(0,0,0,0.3)'}}>
-              <button className="btn-panel" onClick={store.undo} disabled={store.historyIndex <= 0} title="Deshacer (Ctrl+Z)" style={{padding:'8px 15px'}}>⮌ Deshacer</button>
-              <button className="btn-panel" onClick={store.redo} disabled={store.historyIndex >= (store.history || []).length - 1} title="Rehacer (Ctrl+Y)" style={{padding:'8px 15px'}}>⮎ Rehacer</button>
-              
-              <div style={{width:'1px', background:'#444', margin:'0 5px'}}></div>
-              
-              <div style={{display:'flex', alignItems:'center', gap:'10px', padding:'0 10px'}}>
-                <span style={{fontSize:'13px', fontWeight:'bold', color:'#00d2ff'}}>ZOOM:</span>
-                <select value={store.sheetZoom} onChange={e => store.setPageConfig({sheetZoom: Number(e.target.value)})} style={{background:'#1e1e2f', color:'white', border:'1px solid #444', padding:'5px', borderRadius:'4px', outline:'none', fontWeight:'bold'}}>
-                  <option value="50">50%</option>
-                  <option value="75">75%</option>
-                  <option value="100">100%</option>
-                  <option value="125">125%</option>
-                  <option value="150">150%</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          <div className="sheet-container" style={{ transform: `scale(${(store.sheetZoom || 100) / 100})` }}>
+        <div className="main-area" style={{ flex: 1, background: '#151520', overflowY: 'auto' }}>
+          <div className="sheet-container">
             {paginatedExercises.map((pageExs, pageIdx) => (
               <div key={pageIdx} className="page-sheet">
                 <div className="page-border">
@@ -1174,59 +1195,80 @@ export default function App() {
                             const startW = parseFloat(ex.w) || 50;
                             const parentNode = (e.target as HTMLElement).closest('.exercises-grid');
                             const parentW = parentNode ? parentNode.clientWidth : 680;
+                            
                             const exIndex = pageExs.findIndex(item => item.id === ex.id);
                             const nextEx = pageExs[exIndex + 1];
                             const nextStartW = nextEx ? parseFloat(nextEx.w) : 0;
                             const isSameRow = nextEx && (startW + nextStartW > 80) && (startW + nextStartW <= 105);
                             
                             const onMove = (evt: PointerEvent) => {
-                              const deltaPct = ((evt.clientX - startX) / parentW) * 100;
+                              const dX = evt.clientX - startX;
+                              const deltaPct = (dX / parentW) * 100;
+                              
                               if (isSameRow) {
-                                const newW = Math.max(10, Math.min(startW + nextStartW - 10, startW + deltaPct));
-                                store.updateBoxSize(ex.id, newW + '%', ex.h);
-                                store.updateBoxSize(nextEx.id, (startW + nextStartW - newW) + '%', nextEx.h);
+                                const maxW = startW + nextStartW - 10;
+                                const newW = Math.max(10, Math.min(maxW, startW + deltaPct));
+                                const newNextW = startW + nextStartW - newW;
+                                useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
+                                useStore.getState().updateBoxSize(nextEx.id, newNextW + '%', nextEx.h);
                               } else {
-                                store.updateBoxSize(ex.id, Math.min(100, Math.max(10, startW + deltaPct)) + '%', ex.h);
+                                const newW = Math.min(100, Math.max(10, startW + deltaPct));
+                                useStore.getState().updateBoxSize(ex.id, newW + '%', ex.h);
                               }
                             };
-                            const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); store.commitHistory(); };
+                            const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
                             window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
                         }} />
                         <div className="no-print side-handle-b" onPointerDown={(e) => {
                             e.preventDefault(); e.stopPropagation();
                             const startY = e.clientY; 
                             const startH = parseFloat(ex.h) || 136;
-                            let rowItems: Exercise[] = []; let tempW = 0; let tempRow: Exercise[] = [];
+                            
+                            let rowItems: Exercise[] = [];
+                            let tempW = 0;
+                            let tempRow: Exercise[] = [];
                             for (const item of pageExs) {
                               const w = parseFloat(item.w) || 50;
                               if (tempW + w > 101 && tempRow.length > 0) {
-                                if (tempRow.some(i => i.id === ex.id)) rowItems = tempRow;
-                                tempRow = [item]; tempW = w;
-                              } else { tempRow.push(item); tempW += w; }
+                                if (tempRow.some(i => i.id === ex.id)) {
+                                  rowItems = tempRow;
+                                }
+                                tempRow = [item];
+                                tempW = w;
+                              } else {
+                                tempRow.push(item);
+                                tempW += w;
+                              }
                             }
-                            if (tempRow.some(i => i.id === ex.id)) rowItems = tempRow;
+                            if (tempRow.some(i => i.id === ex.id)) {
+                              rowItems = tempRow;
+                            }
 
                             const onMove = (evt: PointerEvent) => {
                               const newH = Math.max(50, startH + (evt.clientY - startY) * 0.264583);
-                              rowItems.forEach(item => store.updateBoxSize(item.id, item.w, newH + 'mm'));
+                              rowItems.forEach(item => {
+                                useStore.getState().updateBoxSize(item.id, item.w, newH + 'mm');
+                              });
                             };
-                            const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); store.commitHistory(); };
+                            const cleanup = () => { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', cleanup); };
                             window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', cleanup);
                         }} />
 
-                        <button className="no-print" onClick={() => store.removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
+                        <button className="no-print" onClick={() => removeExercise(ex.id)} style={{ position:'absolute', top: 5, right: 5, zIndex: 10, background: '#ff4757', color: 'white', border: 'none', borderRadius: '50%', cursor: 'pointer', width:'20px', height:'20px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center', fontSize:'12px', padding: 0 }} title="Borrar Ejercicio">X</button>
                         
+                        {/* ENUNCIADO AUTOGUARDABLE Y JUSTIFICADO */}
                         <div className="exercise-title" style={{ paddingRight: '30px', display: 'flex', gap: '4px' }}>
-                          <span contentEditable={false}><b>{store.exercises.findIndex(e => e.id === ex.id) + 1}.</b></span>
-                          <span contentEditable suppressContentEditableWarning style={{ flex: 1, outline: 'none' }} onBlur={e => store.updateExerciseText(ex.id, 'title', e.currentTarget.innerText)}>{ex.title}</span>
+                          <span contentEditable={false}><b>{exercises.findIndex(e => e.id === ex.id) + 1}.</b></span>
+                          <span contentEditable suppressContentEditableWarning style={{ flex: 1, outline: 'none' }} onBlur={e => useStore.getState().updateExerciseText(ex.id, 'title', e.currentTarget.innerText)}>{ex.title}</span>
                         </div>
                         
-                        {ex.dataStr && <div className="exercise-data" contentEditable suppressContentEditableWarning onBlur={e => store.updateExerciseText(ex.id, 'dataStr', e.currentTarget.innerText)}>{ex.dataStr}</div>}
+                        {/* DATOS AUTOGUARDABLES Y JUSTIFICADOS */}
+                        {ex.dataStr && <div className="exercise-data" contentEditable suppressContentEditableWarning onBlur={e => useStore.getState().updateExerciseText(ex.id, 'dataStr', e.currentTarget.innerText)}>{ex.dataStr}</div>}
                         
                         <div className="no-print" style={{ display: 'flex', gap: '5px', padding: '4px 10px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
-                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => store.addFreeElement(ex.id, 'punto')}>+ Pto</button>
-                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => store.addFreeElement(ex.id, 'recta')}>+ Rct</button>
-                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => store.addFreeElement(ex.id, 'plano')}>+ Pln</button>
+                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'punto')}>+ Pto</button>
+                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'recta')}>+ Rct</button>
+                          <button className="btn-mini" style={{ padding: '2px 6px', fontSize: '0.65rem' }} onClick={() => addFreeElement(ex.id, 'plano')}>+ Pln</button>
                         </div>
 
                         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -1240,44 +1282,6 @@ export default function App() {
             ))}
           </div>
         </div>
-
-        {/* COLUMNA DERECHA NUEVA (RESTRICCIONES Y SELECCIÓN) */}
-        <div className="right-sidebar no-print">
-          <h3 style={{ color: '#00d2ff', margin: 0, fontSize:'16px', textTransform:'uppercase' }}>Restricciones Geométricas</h3>
-          <p style={{fontSize:'12px', color:'#aaa', marginTop:'0', lineHeight:'1.4'}}>Para vincular, haz <b>Clic Izquierdo</b> sobre las líneas o trazas en el papel.</p>
-          
-          <div style={{background:'#1e1e2f', padding:'12px', borderRadius:'6px', border:'1px solid #444', minHeight:'120px', display:'flex', flexDirection:'column'}}>
-            {(store.selectedElements || []).length === 0 && <span style={{color:'#64748b', fontStyle:'italic', fontSize:'13px', margin:'auto'}}>Ningún elemento seleccionado...</span>}
-            
-            {(store.selectedElements || []).map((item) => (
-              <div key={item.id} style={{display:'flex', background:'#363654', padding:'8px 10px', borderRadius:'4px', marginBottom:'6px', borderLeft:'4px solid #ff9f43', fontWeight:'bold', fontSize:'14px'}}>
-                {item.label}
-              </div>
-            ))}
-
-            {(store.selectedElements || []).length === 2 && (
-              <div style={{marginTop:'auto', display:'flex', flexDirection:'column', gap:'8px', paddingTop:'15px'}}>
-                <button className="btn-panel" style={{background:'#ff9f43', color:'#000'}} onClick={() => store.applyConstraint('parallel')}>║ Hacer Paralelos</button>
-                <button className="btn-panel" style={{background:'#ff9f43', color:'#000'}} onClick={() => store.applyConstraint('perpendicular')}>⟂ Hacer Perpendiculares</button>
-              </div>
-            )}
-          </div>
-
-          {(store.constraints || []).length > 0 && (
-            <div style={{marginTop:'10px'}}>
-              <label style={{color:'#00d2ff', fontWeight:'bold', marginBottom:'8px', display:'block'}}>Vínculos Activos:</label>
-              <div style={{maxHeight:'200px', overflowY:'auto', display:'flex', flexDirection:'column', gap:'6px'}}>
-                {store.constraints.map(c => (
-                  <div key={c.id} style={{fontSize:'13px', background:'#363654', padding:'8px 10px', borderRadius:'4px', display:'flex', justifyContent:'space-between', alignItems:'center', border:'1px solid #555'}}>
-                    <span style={{fontWeight:'bold'}}>{c.type === 'parallel' ? '║ Paralelismo' : '⟂ Perpendicularidad'}</span>
-                    <button style={{background:'#ff4757', border:'none', color:'white', cursor:'pointer', borderRadius:'50%', width:'22px', height:'22px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center'}} onClick={() => store.removeConstraint(c.id)}>X</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
       </div>
     </>
   );
