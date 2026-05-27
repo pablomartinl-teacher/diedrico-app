@@ -105,8 +105,21 @@ function enforceConstraintPair(ex: Exercise, c: Constraint, structuralChangeOnId
   }
 }
 
-const savedData = localStorage.getItem('diedrico_autosave');
-const initialExercises = savedData ? JSON.parse(savedData) : [];
+// SISTEMA DEFENSIVO: Si los datos locales están corruptos, inicia de cero para evitar pantalla blanca.
+let initialExercises: Exercise[] = [];
+try {
+  const savedData = localStorage.getItem('diedrico_autosave');
+  if (savedData) {
+    const parsed = JSON.parse(savedData);
+    if (Array.isArray(parsed) && parsed.every(ex => ex && ex.state)) {
+      initialExercises = parsed;
+    } else {
+      localStorage.removeItem('diedrico_autosave');
+    }
+  }
+} catch (e) {
+  localStorage.removeItem('diedrico_autosave');
+}
 
 export const useStore = create<CadStore>()((set, get) => ({
   exercises: initialExercises,
@@ -149,7 +162,7 @@ export const useStore = create<CadStore>()((set, get) => ({
   setPrinting: (val) => set({ isPrinting: val }),
 
   selectElement: (exId, type, id, label) => set((state) => {
-    let list = [...state.selectedElements];
+    let list = [...(state.selectedElements || [])];
     const index = list.findIndex(item => item.id === id);
     if (index > -1) {
       list.splice(index, 1);
@@ -175,7 +188,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       angleDelta: type === 'parallel' ? 0 : Math.PI/2
     };
 
-    const nextExercises = state.exercises.map(ex => {
+    const nextExercises = (state.exercises || []).map(ex => {
       if (ex.id !== e1.exId) return ex;
       let cloned = JSON.parse(JSON.stringify(ex));
       enforceConstraintPair(cloned, newConstraint, e1.id);
@@ -183,14 +196,14 @@ export const useStore = create<CadStore>()((set, get) => ({
     });
 
     set({
-      constraints: [...state.constraints, newConstraint],
+      constraints: [...(state.constraints || []), newConstraint],
       selectedElements: []
     });
     get().pushHistory(nextExercises);
   },
 
   removeConstraintsFor: (id) => set((state) => ({
-    constraints: state.constraints.filter(c => c.elem1Id !== id && c.elem2Id !== id)
+    constraints: (state.constraints || []).filter(c => c.elem1Id !== id && c.elem2Id !== id)
   })),
   
   saveData: () => { 
@@ -337,24 +350,24 @@ export const useStore = create<CadStore>()((set, get) => ({
       id: uid(), type: t, title, w, h, dataStr,
       state: { ltY, originX, ppX: 750, reqRegla: opts.reqRegla, reqPP: opts.reqPP, reqOrigin: opts.reqOrigin, planes, segments, pts, bounds: { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 } }
     };
-    get().pushHistory([...get().exercises, newEx]);
+    get().pushHistory([...(get().exercises || []), newEx]);
   },
 
-  removeExercise: (id) => get().pushHistory(get().exercises.filter(e => e.id !== id)),
-  updateBoxSize: (id, w, h) => set({ exercises: get().exercises.map(ex => ex.id === id ? { ...ex, w, h } : ex) }),
+  removeExercise: (id) => get().pushHistory((get().exercises || []).filter(e => e.id !== id)),
+  updateBoxSize: (id, w, h) => set({ exercises: (get().exercises || []).map(ex => ex.id === id ? { ...ex, w, h } : ex) }),
 
   addFreeElement: (exId, elemType) => {
-    let list = get().exercises.map(ex => {
+    let list = (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state }; let ox = s.originX; let oy = s.ltY;
       if (elemType === 'punto') {
-          s.pts = [...s.pts, { id:uid(), name: String.fromCharCode(65 + s.pts.length), nodes:[{id:uid(), t:'2', x:ox+50, y:oy-50, pairId:'nf1'}, {id:'nf1', t:'1', x:ox+50, y:oy+50}] }];
+          s.pts = [...(s.pts || []), { id:uid(), name: String.fromCharCode(65 + (s.pts || []).length), nodes:[{id:uid(), t:'2', x:ox+50, y:oy-50, pairId:'nf1'}, {id:'nf1', t:'1', x:ox+50, y:oy+50}] }];
       } else if (elemType === 'recta') {
-          const nL = String.fromCharCode(114 + Math.floor(s.segments.length / 2));
-          s.segments = [...s.segments, { id:uid(), label:`${nL}2`, p1:{x:ox-50, y:oy-20}, p2:{x:ox+50, y:oy-70} }, { id:uid(), label:`${nL}1`, p1:{x:ox-50, y:oy+30}, p2:{x:ox+50, y:oy+80} }];
+          const nL = String.fromCharCode(114 + Math.floor((s.segments || []).length / 2));
+          s.segments = [...(s.segments || []), { id:uid(), label:`${nL}2`, p1:{x:ox-50, y:oy-20}, p2:{x:ox+50, y:oy-70} }, { id:uid(), label:`${nL}1`, p1:{x:ox-50, y:oy+30}, p2:{x:ox+50, y:oy+80} }];
       } else if (elemType === 'plano') {
           const greek = ['α','β','γ','δ','ε'];
-          s.planes = [...s.planes, { id:uid(), name: greek[s.planes.length % 5], type:'oblicuo', vX:ox-70, p1:{x:ox+100, y:oy+150}, p2:{x:ox+100, y:oy-150} }];
+          s.planes = [...(s.planes || []), { id:uid(), name: greek[(s.planes || []).length % 5], type:'oblicuo', vX:ox-70, p1:{x:ox+100, y:oy+150}, p2:{x:ox+100, y:oy-150} }];
       }
       return { ...ex, state: s };
     });
@@ -363,60 +376,60 @@ export const useStore = create<CadStore>()((set, get) => ({
 
   removeElement: (exId, elemType, elemId) => {
     get().removeConstraintsFor(elemId);
-    let list = get().exercises.map(ex => {
+    let list = (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
-      if (elemType === 'punto') s.pts = s.pts.filter(p => p.id !== elemId && !p.nodes.some(n=>n.id===elemId));
-      else if (elemType === 'recta') s.segments = s.segments.filter(sg => sg.id !== elemId);
-      else if (elemType === 'plano') s.planes = s.planes.filter(pl => pl.id !== elemId);
+      if (elemType === 'punto') s.pts = (s.pts || []).filter(p => p.id !== elemId && !(p.nodes || []).some(n=>n.id===elemId));
+      else if (elemType === 'recta') s.segments = (s.segments || []).filter(sg => sg.id !== elemId);
+      else if (elemType === 'plano') s.planes = (s.planes || []).filter(pl => pl.id !== elemId);
       return { ...ex, state: s };
     });
     get().pushHistory(list);
   },
 
   updateName: (exId, elemType, elemId, newName) => set({
-    exercises: get().exercises.map(ex => {
+    exercises: (get().exercises || []).map(ex => {
       if(ex.id !== exId) return ex;
       let s = {...ex.state};
-      if(elemType === 'punto') s.pts = s.pts.map(p => p.id === elemId ? {...p, name: newName} : p);
-      else if(elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? {...seg, label: newName} : seg);
-      else if(elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
+      if(elemType === 'punto') s.pts = (s.pts || []).map(p => p.id === elemId ? {...p, name: newName} : p);
+      else if(elemType === 'recta') s.segments = (s.segments || []).map(seg => seg.id === elemId ? {...seg, label: newName} : seg);
+      else if(elemType === 'plano') s.planes = (s.planes || []).map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
       return {...ex, state: s};
     })
   }),
 
   updateExerciseText: (exId, field, text) => set({
-    exercises: get().exercises.map(ex => ex.id === exId ? { ...ex, [field]: text } : ex)
+    exercises: (get().exercises || []).map(ex => ex.id === exId ? { ...ex, [field]: text } : ex)
   }),
 
   togglePlaneType: (exId, planeId) => set({
-    exercises: get().exercises.map(ex => {
+    exercises: (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
-      return { ...ex, state: { ...ex.state, planes: ex.state.planes.map(pl => pl.id === planeId ? { ...pl, type: pl.type === 'paralelo_lt' ? 'oblicuo' : 'paralelo_lt' } : pl )}};
+      return { ...ex, state: { ...ex.state, planes: (ex.state.planes || []).map(pl => pl.id === planeId ? { ...pl, type: pl.type === 'paralelo_lt' ? 'oblicuo' : 'paralelo_lt' } : pl )}};
     })
   }),
 
   toggleLineStyle: (exId, elemType, elemId) => set({
-    exercises: get().exercises.map(ex => {
+    exercises: (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
       const nSt = (c?: string) => c === 'solid' ? 'dashed' : c === 'dashed' ? undefined : 'solid';
-      if (elemType === 'recta') s.segments = s.segments.map(sg => sg.id === elemId ? { ...sg, customStyle: nSt(sg.customStyle) } : sg);
-      else if (elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nSt(pl.customStyle) } : pl);
+      if (elemType === 'recta') s.segments = (s.segments || []).map(sg => sg.id === elemId ? { ...sg, customStyle: nSt(sg.customStyle) } : sg);
+      else if (elemType === 'plano') s.planes = (s.planes || []).map(pl => pl.id === elemId ? { ...pl, customStyle: nSt(pl.customStyle) } : pl);
       return { ...ex, state: s };
     })
   }),
 
   updateNode: (exId, ptId, nodeId, newX, newY) => {
-    let list = get().exercises.map(ex => {
+    let list = (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state };
-      let thePoint = s.pts.find(p => p.id === ptId);
-      let theNode = thePoint?.nodes.find(n => n.id === nodeId);
+      let thePoint = (s.pts || []).find(p => p.id === ptId);
+      let theNode = (thePoint?.nodes || []).find(n => n.id === nodeId);
       if (theNode) {
          let dx = newX - theNode.x;
-         let pairNode = thePoint?.nodes.find(n => n.id === theNode?.pairId);
-         s.segments = s.segments.map(seg => {
+         let pairNode = (thePoint?.nodes || []).find(n => n.id === theNode?.pairId);
+         s.segments = (s.segments || []).map(seg => {
              let ns = {...seg};
              if (Math.abs(seg.p1.x - theNode!.x) < 1 && Math.abs(seg.p1.y - theNode!.y) < 1) ns.p1 = {x: newX, y: newY};
              if (Math.abs(seg.p2.x - theNode!.x) < 1 && Math.abs(seg.p2.y - theNode!.y) < 1) ns.p2 = {x: newX, y: newY};
@@ -427,21 +440,21 @@ export const useStore = create<CadStore>()((set, get) => ({
              return ns;
          });
       }
-      s.pts = s.pts.map(p => p.id === ptId ? { ...p, nodes: p.nodes.map(n => n.id === nodeId ? { ...n, x: newX, y: newY } : (n.pairId === nodeId ? { ...n, x: newX } : n)) } : p);
+      s.pts = (s.pts || []).map(p => p.id === ptId ? { ...p, nodes: (p.nodes || []).map(n => n.id === nodeId ? { ...n, x: newX, y: newY } : (n.pairId === nodeId ? { ...n, x: newX } : n)) } : p);
       return { ...ex, state: s };
     });
     set({ exercises: list });
   },
 
   updatePlane: (exId, planeId, newVX) => {
-    let list = get().exercises.map(ex => {
+    let list = (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
       let cloned = JSON.parse(JSON.stringify(ex)) as Exercise;
-      let pl = cloned.state.planes.find(p => p.id === planeId);
+      let pl = (cloned.state.planes || []).find(p => p.id === planeId);
       if (pl) {
         let dx = newVX - pl.vX;
         pl.vX = newVX; pl.p1.x += dx; pl.p2.x += dx;
-        get().constraints.filter(c => c.exId === exId && (c.elem1Id === planeId || c.elem2Id === planeId)).forEach(c => {
+        (get().constraints || []).filter(c => c.exId === exId && (c.elem1Id === planeId || c.elem2Id === planeId)).forEach(c => {
           enforceConstraintPair(cloned, c, planeId);
         });
       }
@@ -451,14 +464,14 @@ export const useStore = create<CadStore>()((set, get) => ({
   },
 
   updatePlaneEndpoint: (exId, planeId, traceNum, newX, newY) => {
-    let list = get().exercises.map(ex => {
+    let list = (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
       let cloned = JSON.parse(JSON.stringify(ex)) as Exercise;
-      let pl = cloned.state.planes.find(p => p.id === planeId);
+      let pl = (cloned.state.planes || []).find(p => p.id === planeId);
       if (pl) {
         if (traceNum === 1) pl.p1 = { x: newX, y: newY };
         else pl.p2 = { x: newX, y: newY };
-        get().constraints.filter(c => c.exId === exId && (c.elem1Id === planeId || c.elem2Id === planeId)).forEach(c => {
+        (get().constraints || []).filter(c => c.exId === exId && (c.elem1Id === planeId || c.elem2Id === planeId)).forEach(c => {
           enforceConstraintPair(cloned, c, planeId);
         });
       }
@@ -468,14 +481,14 @@ export const useStore = create<CadStore>()((set, get) => ({
   },
 
   updateSegment: (exId, segId, pointIndex, newX, newY) => {
-    let list = get().exercises.map(ex => {
+    let list = (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
       let cloned = JSON.parse(JSON.stringify(ex)) as Exercise;
-      let seg = cloned.state.segments.find(s => s.id === segId);
+      let seg = (cloned.state.segments || []).find(s => s.id === segId);
       if (seg) {
         if (pointIndex === 1) seg.p1 = { x: newX, y: newY };
         else seg.p2 = { x: newX, y: newY };
-        get().constraints.filter(c => c.exId === exId && (c.elem1Id === segId || c.elem2Id === segId)).forEach(c => {
+        (get().constraints || []).filter(c => c.exId === exId && (c.elem1Id === segId || c.elem2Id === segId)).forEach(c => {
           enforceConstraintPair(cloned, c, segId);
         });
       }
@@ -485,15 +498,15 @@ export const useStore = create<CadStore>()((set, get) => ({
   },
 
   updateSystem: (exId, target, valX, valY) => set({
-    exercises: get().exercises.map(ex => {
+    exercises: (get().exercises || []).map(ex => {
       if (ex.id !== exId) return ex;
       let s = { ...ex.state }; if (!s.bounds) s.bounds = { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
       if (target === 'pp') s.ppX = valX;
       else if (target === 'origin') {
         let dx = valX - s.originX; let dy = valY - s.ltY; s.originX = valX; s.ltY = valY; s.ppX += dx;
-        s.planes = s.planes.map(pl => ({...pl, vX: pl.vX + dx, p1: {x: pl.p1.x + dx, y: pl.p1.y + dy}, p2: {x: pl.p2.x + dx, y: pl.p2.y + dy}}));
-        s.segments = s.segments.map(sg => ({...sg, p1:{x:sg.p1.x+dx, y:sg.p1.y+dy}, p2:{x:sg.p2.x+dx, y:sg.p2.y+dy}}));
-        s.pts = s.pts.map(p => ({...p, nodes: p.nodes.map(n => ({...n, x: n.x+dx, y: n.y+dy}))}));
+        s.planes = (s.planes || []).map(pl => ({...pl, vX: pl.vX + dx, p1: {x: pl.p1.x + dx, y: pl.p1.y + dy}, p2: {x: pl.p2.x + dx, y: pl.p2.y + dy}}));
+        s.segments = (s.segments || []).map(sg => ({...sg, p1:{x:sg.p1.x+dx, y:sg.p1.y+dy}, p2:{x:sg.p2.x+dx, y:sg.p2.y+dy}}));
+        s.pts = (s.pts || []).map(p => ({...p, nodes: (p.nodes || []).map(n => ({...n, x: n.x+dx, y: n.y+dy}))}));
       }
       else if (target === 'lt1') s.bounds.ltX1 = valX;
       else if (target === 'lt2') s.bounds.ltX2 = valX;
@@ -502,12 +515,17 @@ export const useStore = create<CadStore>()((set, get) => ({
   })
 }));
 
+// Autoguardado silencioso
+useStore.subscribe((state) => {
+  localStorage.setItem('diedrico_autosave', JSON.stringify(state.exercises || []));
+});
+
 // ==========================================
 // 2. EL MOTOR DE DIBUJO CAD CON RESOLUCIÓN FIJA
 // ==========================================
 function View2D({ ex }: { ex: Exercise }) {
-  const { updateSegment, updatePlane, updatePlaneEndpoint, updateSystem, selectElement, activeTool, selectedElements, isPrinting } = useStore();
-  const { ltY, originX, ppX, reqRegla, reqPP, reqOrigin, planes, pts, segments } = ex.state;
+  const { updateSegment, updatePlane, updatePlaneEndpoint, updateSystem, selectElement, activeTool, selectedElements, isPrinting, updateNode, removeElement, togglePlaneType } = useStore();
+  const { ltY, originX, ppX, reqRegla, reqPP, reqOrigin, planes, pts, segments } = ex.state || {};
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ w: 800, h: 400 });
@@ -519,9 +537,9 @@ function View2D({ ex }: { ex: Exercise }) {
     return () => obs.disconnect();
   }, []);
 
-  const scale = Math.min(dim.w / 800, dim.h / 400) || 1;
-  const offsetX = (dim.w - 800 * scale) / 2;
-  const offsetY = (dim.h - 400 * scale) / 2;
+  const scale = Math.min((dim.w || 800) / 800, (dim.h || 400) / 400) || 1;
+  const offsetX = ((dim.w || 800) - 800 * scale) / 2;
+  const offsetY = ((dim.h || 400) - 400 * scale) / 2;
   const sc = (val: number) => val / scale;
   const getFont = (size: number, weight = "") => `${weight} ${sc(size)}px Arial`.trim();
 
@@ -531,40 +549,40 @@ function View2D({ ex }: { ex: Exercise }) {
   const handleOutLine = () => { document.body.style.cursor='default'; };
 
   const drawScene = (ctx: any) => {
-    const b = ex.state.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+    const b = ex.state?.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
     let dynLabels: {text: string, x: number, y: number, font: string}[] = [];
     
     ctx.strokeStyle = "#1e1e24"; ctx.lineWidth = 2.2;
-    ctx.beginPath(); ctx.moveTo(b.ltX1, ltY); ctx.lineTo(b.ltX2, ltY); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(b.ltX1 || 0, ltY || 0); ctx.lineTo(b.ltX2 || 800, ltY || 0); ctx.stroke();
 
-    planes.forEach((pl: ExPlane) => {
-      const isSel = selectedElements.some(s => s.id === pl.id);
+    (planes || []).forEach((pl: ExPlane) => {
+      const isSel = (selectedElements || []).some(s => s.id === pl.id);
       ctx.strokeStyle = isSel ? "#ff9f43" : "#1e1e24"; 
       ctx.lineWidth = isSel ? 3.5 : 2.2;
-      ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pl.vX || 0, ltY || 0); ctx.lineTo(pl.p2?.x || 0, pl.p2?.y || 0); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(pl.vX || 0, ltY || 0); ctx.lineTo(pl.p1?.x || 0, pl.p1?.y || 0); ctx.stroke();
       if (pl.name) {
-        dynLabels.push({ text: `${pl.name}2`, x: pl.p2.x, y: pl.p2.y - sc(10), font: getFont(15, "bold") });
-        dynLabels.push({ text: `${pl.name}1`, x: pl.p1.x, y: pl.p1.y + sc(20), font: getFont(15, "bold") });
+        dynLabels.push({ text: `${pl.name}2`, x: pl.p2?.x || 0, y: (pl.p2?.y || 0) - sc(10), font: getFont(15, "bold") });
+        dynLabels.push({ text: `${pl.name}1`, x: pl.p1?.x || 0, y: (pl.p1?.y || 0) + sc(20), font: getFont(15, "bold") });
       }
     });
 
-    segments.forEach((seg: ExSegment) => {
-      const isSel = selectedElements.some(s => s.id === seg.id);
+    (segments || []).forEach((seg: ExSegment) => {
+      const isSel = (selectedElements || []).some(s => s.id === seg.id);
       ctx.strokeStyle = isSel ? "#ff9f43" : "#00d2ff"; 
       ctx.lineWidth = isSel ? 3.5 : 2.0;
       if (seg.customStyle === 'dashed' || seg.isDashed) ctx.setLineDash([sc(6), sc(4)]);
-      ctx.beginPath(); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
-      if (seg.label) dynLabels.push({ text: seg.label, x: (seg.p1.x + seg.p2.x)/2, y: (seg.p1.y + seg.p2.y)/2 - sc(8), font: getFont(14, "bold") });
+      ctx.beginPath(); ctx.moveTo(seg.p1?.x || 0, seg.p1?.y || 0); ctx.lineTo(seg.p2?.x || 0, seg.p2?.y || 0); ctx.stroke(); ctx.setLineDash([]);
+      if (seg.label) dynLabels.push({ text: seg.label, x: ((seg.p1?.x || 0) + (seg.p2?.x || 0))/2, y: ((seg.p1?.y || 0) + (seg.p2?.y || 0))/2 - sc(8), font: getFont(14, "bold") });
     });
 
-    pts.forEach((p: any) => {
-      p.nodes.forEach((n: ExNode) => {
+    (pts || []).forEach((p: any) => {
+      (p.nodes || []).forEach((n: ExNode) => {
         ctx.beginPath(); ctx.strokeStyle = "#ff4757"; ctx.lineWidth = sc(1.5);
-        ctx.moveTo(n.x - sc(5), n.y); ctx.lineTo(n.x + sc(5), n.y);
-        ctx.moveTo(n.x, n.y - sc(5)); ctx.lineTo(n.x, n.y + sc(5));
+        ctx.moveTo((n.x || 0) - sc(5), n.y || 0); ctx.lineTo((n.x || 0) + sc(5), n.y || 0);
+        ctx.moveTo(n.x || 0, (n.y || 0) - sc(5)); ctx.lineTo(n.x || 0, (n.y || 0) + sc(5));
         ctx.stroke();
-        if (p.name) dynLabels.push({ text: `${p.name}${n.t}`, x: n.x + sc(8), y: n.y - sc(8), font: getFont(13, "bold") });
+        if (p.name) dynLabels.push({ text: `${p.name}${n.t}`, x: (n.x || 0) + sc(8), y: (n.y || 0) - sc(8), font: getFont(13, "bold") });
       });
     });
 
@@ -574,39 +592,39 @@ function View2D({ ex }: { ex: Exercise }) {
     });
   };
 
-  const b = ex.state.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
+  const b = ex.state?.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
 
   return (
     <div style={{width: '100%', height: '100%', position: 'relative'}}>
       <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
-        <Stage width={dim.w} height={dim.h}>
+        <Stage width={dim.w || 800} height={dim.h || 400}>
           <Layer scaleX={scale} scaleY={scale} x={offsetX} y={offsetY}>
             <Shape sceneFunc={drawScene} />
             
             <Group visible={!isPrinting}>
               {/* HITBOXES Y NODOS DE CONTROL INTERACTIVOS */}
-              {segments.map(seg => (
-                <Line key={`hit-${seg.id}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || 'r'}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
+              {(segments || []).map(seg => (
+                <Line key={`hit-${seg.id}`} points={[seg.p1?.x || 0, seg.p1?.y || 0, seg.p2?.x || 0, seg.p2?.y || 0]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || 'r'}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
               ))}
-              {planes.map(pl => (
+              {(planes || []).map(pl => (
                 <Group key={`hit-pl-${pl.id}`}>
-                   <Line points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
-                   <Line points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
+                   <Line points={[pl.vX || 0, ltY || 0, pl.p2?.x || 0, pl.p2?.y || 0]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
+                   <Line points={[pl.vX || 0, ltY || 0, pl.p1?.x || 0, pl.p1?.y || 0]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
                 </Group>
               ))}
               
               {/* TIRADORES DE ARRASTRE CAD */}
-              {activeTool === 'pointer' && segments.map(seg => (
+              {activeTool === 'pointer' && (segments || []).map(seg => (
                 <Group key={`drags-${seg.id}`}>
-                  <Circle x={seg.p1.x} y={seg.p1.y} radius={sc(8)} fill="#00d2ff" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
-                  <Circle x={seg.p2.x} y={seg.p2.y} radius={sc(8)} fill="#00d2ff" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle x={seg.p1?.x || 0} y={seg.p1?.y || 0} radius={sc(8)} fill="#00d2ff" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle x={seg.p2?.x || 0} y={seg.p2?.y || 0} radius={sc(8)} fill="#00d2ff" draggable onDragMove={(e) => updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
                 </Group>
               ))}
-              {activeTool === 'pointer' && planes.map(pl => (
+              {activeTool === 'pointer' && (planes || []).map(pl => (
                 <Group key={`drags-pl-${pl.id}`}>
-                  <Circle x={pl.vX} y={ltY} radius={sc(10)} fill="#ff9f43" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
-                  <Circle x={pl.p2.x} y={pl.p2.y} radius={sc(8)} fill="#ff9f43" draggable onDragMove={(e) => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
-                  <Circle x={pl.p1.x} y={pl.p1.y} radius={sc(8)} fill="#ff9f43" draggable onDragMove={(e) => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle x={pl.vX || 0} y={ltY || 0} radius={sc(10)} fill="#ff9f43" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY || 0})} onDragMove={(e) => updatePlane(ex.id, pl.id, e.target.x())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle x={pl.p2?.x || 0} y={pl.p2?.y || 0} radius={sc(8)} fill="#ff9f43" draggable onDragMove={(e) => updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle x={pl.p1?.x || 0} y={pl.p1?.y || 0} radius={sc(8)} fill="#ff9f43" draggable onDragMove={(e) => updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
                 </Group>
               ))}
             </Group>
@@ -631,11 +649,53 @@ export default function App() {
   const [abatEstado, setAbatEstado] = useState('proy');
   const [abatPlano, setAbatPlano] = useState('ph');
 
-  const handleAdd = () => { addExercise({ type, ptCount, lineType, lineMethod, abatLados, abatElem, abatEstado, abatPlano }); };
+  const handleAdd = () => { store.addExercise({ type, ptCount, lineType, lineMethod, abatLados, abatElem, abatEstado, abatPlano }); };
 
-  const { exercises, undo, redo, historyIndex, history, sheetZoom, activeTool, selectedElements, applyConstraint, clearSelection, pageSize, fontFamily, fontSize, setPageConfig, addExercise, removeExercise, addFreeElement, updateBoxSize, saveData, loadData } = store;
+  const handlePrint = () => {
+    store.setPrinting(true);
+    setTimeout(() => {
+      window.print();
+      store.setPrinting(false);
+    }, 300);
+  };
 
-  const PAGE_W = pageSize === 'A3' ? '420mm' : '210mm';
+  const paginatedExercises = useMemo(() => {
+    let pages: Exercise[][] = []; 
+    let currPage: Exercise[] = [];
+    let currY = 0; 
+    let rowH = 0;
+    let rowW = 0;
+    
+    (store.exercises || []).forEach(ex => {
+      let hVal = parseInt(ex.h) || 136;
+      let wVal = parseFloat(ex.w) || 50;
+
+      const MAX_H = pages.length === 0 ? 275 : 305; 
+
+      if (rowW + wVal <= 101) { 
+        rowW += wVal;
+        rowH = Math.max(rowH, hVal);
+      } else {
+        currY += rowH;
+        rowW = wVal;
+        rowH = hVal;
+      }
+
+      if (currY + rowH > MAX_H && currPage.length > 0) {
+        pages.push(currPage);
+        currPage = [];
+        currY = 0;
+        rowW = wVal;
+        rowH = hVal;
+      }
+      currPage.push(ex);
+    });
+    if (currPage.length > 0) pages.push(currPage);
+    if (pages.length === 0) pages = [[]];
+    return pages;
+  }, [store.exercises]);
+
+  const PAGE_W = store.pageSize === 'A3' ? '420mm' : '210mm';
 
   return (
     <>
@@ -649,19 +709,19 @@ export default function App() {
         .top-navbar { height: 50px; background: #121216; border-bottom: 1px solid #1e1e24; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; z-index: 50; }
         .canvas-viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 40px; }
         
-        .sheet-container { transform: scale(${sheetZoom / 100}); transform-origin: top center; transition: transform 0.2s ease; }
-        .page-sheet { background: #ffffff; width: ${PAGE_W}; min-height: 297mm; padding: 4mm; color: #000000; box-sizing: border-box; break-inside: avoid; box-shadow: 0 20px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; margin-bottom: 30px; }
+        .sheet-container { transform: scale(${(store.sheetZoom || 100) / 100}); transform-origin: top center; transition: transform 0.2s ease; }
+        .page-sheet { background: #ffffff; width: ${PAGE_W}; min-height: 297mm; padding: 4mm; color: #000000; box-sizing: border-box; break-inside: avoid; box-shadow: 0 20px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; margin-bottom: 30px; transition: width 0.3s ease; }
         .page-border { border: 2px solid #000; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: #fff; position: relative; }
         
-        .cajetin { width: ${pageSize === 'A3' ? '204mm' : '100%'}; border-right: ${pageSize === 'A3' ? '2px solid black' : 'none'}; border-bottom: 2px solid black; background: #fff; }
+        .cajetin { width: ${store.pageSize === 'A3' ? '204mm' : '100%'}; border-right: ${store.pageSize === 'A3' ? '2px solid black' : 'none'}; border-bottom: 2px solid black; background: #fff; transition: width 0.3s ease; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 6px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; }
         .cajetin-bottom { display: flex; gap: 20px; padding: 12px 12px; font-weight: bold; }
         
         .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; width: 100%; }
         .exercise-box { display: flex; flex-direction: column; position: relative; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: #fff; }
         
-        .exercise-title { padding: 8px 12px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; font-family: ${fontFamily}; font-size: ${fontSize}px; text-align: justify; color: #000; }
-        .exercise-data { font-family: ${fontFamily}; font-size: ${fontSize - 1}px; padding: 6px 12px; border-bottom: 1.5px dashed #ccc; font-weight: bold; line-height: 1.3; text-align: justify; color: #333; }
+        .exercise-title { padding: 8px 12px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; font-family: ${store.fontFamily || 'Arial'}; font-size: ${store.fontSize || 13}px; text-align: justify; color: #000; }
+        .exercise-data { font-family: ${store.fontFamily || 'Arial'}; font-size: ${(store.fontSize || 13) - 1}px; padding: 6px 12px; border-bottom: 1.5px dashed #ccc; font-weight: bold; line-height: 1.3; text-align: justify; color: #333; }
         
         .cad-btn { background: #1e1e24; color: #e2e8f0; border: 1px solid #3a3a44; padding: 10px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; }
         .cad-btn:hover { background: #00d2ff; color: #0c0c0e; border-color: #00d2ff; }
@@ -679,6 +739,7 @@ export default function App() {
           .main-workspace { background: none; }
           .canvas-viewport { padding: 0; }
           .sheet-container { transform: scale(1) !important; }
+          @page { size: ${store.pageSize === 'A3' ? 'A3 landscape' : 'A4 portrait'}; margin: 0; }
           .page-sheet { box-shadow: none; margin: 0; }
         }
       `}</style>
@@ -693,21 +754,21 @@ export default function App() {
           
           <div style={{display:'flex', flexDirection:'column', gap:'12px', background:'#18181f', padding:'14px', borderRadius:'8px', border:'1px solid #222'}}>
             <label>Formato de Lámina</label>
-            <select value={pageSize} onChange={e => setPageConfig({pageSize: e.target.value as any})}>
+            <select value={store.pageSize} onChange={e => store.setPageConfig({pageSize: e.target.value as any})}>
               <option value="A4">A4 Norma (Vertical)</option>
               <option value="A3">A3 Técnico (Horizontal)</option>
             </select>
 
             <label>Tipografía Enunciados</label>
-            <select value={fontFamily} onChange={e => setPageConfig({fontFamily: e.target.value})}>
+            <select value={store.fontFamily} onChange={e => store.setPageConfig({fontFamily: e.target.value})}>
               <option value="'Segoe UI', sans-serif">Segoe UI Clean</option>
-              <option value="Arial">Arial Técnico</option>
-              <option value="'Times New Roman'">Times Roman DIN</option>
-              <option value="'Courier New'">Monospace Vector</option>
+              <option value="Arial, sans-serif">Arial Técnico</option>
+              <option value="'Times New Roman', serif">Times Roman DIN</option>
+              <option value="'Courier New', monospace">Monospace Vector</option>
             </select>
 
-            <label>Tamaño Fuente: {fontSize}px</label>
-            <input type="range" min="11" max="22" value={fontSize} onChange={e => setPageConfig({fontSize: Number(e.target.value)})} />
+            <label>Tamaño Fuente: {store.fontSize}px</label>
+            <input type="range" min="11" max="22" value={store.fontSize} onChange={e => store.setPageConfig({fontSize: Number(e.target.value)})} />
           </div>
 
           <div style={{display:'flex', flexDirection:'column', gap:'12px', background:'#18181f', padding:'14px', borderRadius:'8px', border:'1px solid #222'}}>
@@ -738,8 +799,8 @@ export default function App() {
 
           <div style={{marginTop:'auto', display:'flex', flexDirection:'column', gap:'8px'}}>
             <div style={{display:'flex', gap:'6px'}}>
-              <button className="cad-btn" style={{flex:1}} onClick={saveData}>Guardar</button>
-              <button className="cad-btn" style={{flex:1}} onClick={loadData}>Cargar</button>
+              <button className="cad-btn" style={{flex:1}} onClick={store.saveData}>Guardar</button>
+              <button className="cad-btn" style={{flex:1}} onClick={store.loadData}>Cargar</button>
             </div>
             <button className="cad-btn" style={{background:'#2ed573', color:'#000'}} onClick={handlePrint}>🖨️ Imprimir Trabajo</button>
           </div>
@@ -750,14 +811,14 @@ export default function App() {
           <div className="top-navbar no-print">
             {/* UNDO / REDO TRADICIONAL */}
             <div style={{display:'flex', gap:'8px'}}>
-              <button className="cad-btn" onClick={undo} disabled={historyIndex === 0} title="Deshacer Cambio">⮌</button>
-              <button className="cad-btn" onClick={redo} disabled={historyIndex === history.length - 1} title="Rehacer Cambio">⮎</button>
+              <button className="cad-btn" onClick={store.undo} disabled={store.historyIndex <= 0} title="Deshacer Cambio">⮌</button>
+              <button className="cad-btn" onClick={store.redo} disabled={store.historyIndex >= (store.history || []).length - 1} title="Rehacer Cambio">⮎</button>
             </div>
 
             {/* CONTROL DE PORCENTAJE DE VISIBILIDAD */}
             <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
               <span style={{fontSize:'12px', fontWeight:600, color:'#94a3b8'}}>VISIBILIDAD:</span>
-              <select value={sheetZoom} onChange={e => setPageConfig({sheetZoom: Number(e.target.value)})} style={{width:'90px', padding:'6px'}}>
+              <select value={store.sheetZoom} onChange={e => store.setPageConfig({sheetZoom: Number(e.target.value)})} style={{width:'90px', padding:'6px'}}>
                 <option value="50">50%</option>
                 <option value="75">75%</option>
                 <option value="100">100%</option>
@@ -770,7 +831,7 @@ export default function App() {
           <div className="canvas-viewport">
             <div className="sheet-container">
               {paginatedExercises.map((pageExs, pageIdx) => (
-                <div key={pageIdx} className="page-sheet">
+                <div key={`page-${pageIdx}`} className="page-sheet">
                   <div className="page-border">
                     {pageIdx === 0 && (
                       <div className="cajetin">
@@ -787,7 +848,7 @@ export default function App() {
 
                     <div className="exercises-grid">
                       {pageExs.map((ex) => (
-                        <div key={ex.id} className="exercise-box" style={{ flexBasis: ex.w, minHeight: ex.h }}>
+                        <div key={`ex-${ex.id}`} className="exercise-box" style={{ flexBasis: ex.w, minHeight: ex.h }}>
                           <div className="exercise-title" onBlur={e => store.updateExerciseText(ex.id, 'title', e.currentTarget.innerText)} contentEditable suppressContentEditableWarning>
                             {ex.title}
                           </div>
@@ -798,10 +859,10 @@ export default function App() {
                           )}
                           
                           <div className="no-print" style={{display:'flex', gap:'4px', padding:'4px', background:'#f1f5f9', borderBottom:'1px solid #ddd'}}>
-                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'punto')}>+ Punto</button>
-                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'recta')}>+ Recta</button>
-                            <button className="btn-mini" onClick={() => addFreeElement(ex.id, 'plano')}>+ Plano</button>
-                            <button className="btn-mini" style={{marginLeft:'auto', background:'#ff4757', color:'#fff'}} onClick={() => removeExercise(ex.id)}>Eliminar</button>
+                            <button className="btn-mini" onClick={() => store.addFreeElement(ex.id, 'punto')}>+ Punto</button>
+                            <button className="btn-mini" onClick={() => store.addFreeElement(ex.id, 'recta')}>+ Recta</button>
+                            <button className="btn-mini" onClick={() => store.addFreeElement(ex.id, 'plano')}>+ Plano</button>
+                            <button className="btn-mini" style={{marginLeft:'auto', background:'#ff4757', color:'#fff'}} onClick={() => store.removeExercise(ex.id)}>Eliminar</button>
                           </div>
 
                           <div style={{flex:1, position:'relative'}}>
@@ -821,10 +882,10 @@ export default function App() {
         <div className="right-toolbar no-print">
           <label>Herramientas CAD</label>
           <div style={{display:'flex', gap:'8px', marginBottom:'10px'}}>
-            <button className={`tool-icon-btn ${activeTool === 'pointer' ? 'active' : ''}`} onClick={() => setPageConfig({activeTool: 'pointer'})} title="Modo Selección por Flecha">
+            <button className={`tool-icon-btn ${store.activeTool === 'pointer' ? 'active' : ''}`} onClick={() => store.setPageConfig({activeTool: 'pointer'})} title="Modo Selección por Flecha">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2l12 11.2-5.8.8 3.6 6.6-2.4 1.3-3.6-6.6-3.8 3.7z"/></svg>
             </button>
-            <button className={`tool-icon-btn ${activeTool === 'pan' ? 'active' : ''}`} onClick={() => { setPageConfig({activeTool: 'pan'}); clearSelection(); }} title="Modo Navegación Libre">
+            <button className={`tool-icon-btn ${store.activeTool === 'pan' ? 'active' : ''}`} onClick={() => { store.setPageConfig({activeTool: 'pan'}); store.clearSelection(); }} title="Modo Navegación Libre">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 1v5h-2v-5h2zM6 11h-5v2h5v-2zM23 11h-5v2h5v-2zM13 18v5h-2v-5h2z"/></svg>
             </button>
           </div>
@@ -833,24 +894,24 @@ export default function App() {
 
           <label>Inspector de Relaciones</label>
           <div style={{background:'#18181f', padding:'12px', borderRadius:'6px', border:'1px solid #2d2d3a', minHeight:'120px', fontSize:'13px'}}>
-            {selectedElements.length === 0 && <span style={{color:'#64748b', fontStyle:'italic'}}>Usa la flecha para tocar elementos de la hoja y enlazarlos geométricamente...</span>}
+            {(store.selectedElements || []).length === 0 && <span style={{color:'#64748b', fontStyle:'italic'}}>Usa la flecha para tocar elementos de la hoja y enlazarlos...</span>}
             
-            {selectedElements.map((item, idx) => (
+            {(store.selectedElements || []).map((item, idx) => (
               <div key={item.id} style={{display:'flex', justifyContent:'space-between', alignItems:'center', background:'#242432', padding:'6px 10px', borderRadius:'4px', marginBottom:'6px', borderLeft:'3px solid #ff9f43'}}>
                 <span>{item.label}</span>
               </div>
             ))}
 
-            {selectedElements.length === 2 && (
+            {(store.selectedElements || []).length === 2 && (
               <div style={{marginTop:'14px', display:'flex', flexDirection:'column', gap:'6px'}}>
                 <label style={{color:'#ff9f43'}}>Vincular Elementos:</label>
-                <button className="cad-btn" style={{background:'#242432', borderColor:'#ff9f43'}} onClick={() => applyConstraint('parallel')}>平行 Hacer Paralelos</button>
-                <button className="cad-btn" style={{background:'#242432', borderColor:'#ff9f43'}} onClick={() => applyConstraint('perpendicular')}>⟂ Hacer Perpendiculares</button>
+                <button className="cad-btn" style={{background:'#242432', borderColor:'#ff9f43'}} onClick={() => store.applyConstraint('parallel')}>平行 Hacer Paralelos</button>
+                <button className="cad-btn" style={{background:'#242432', borderColor:'#ff9f43'}} onClick={() => store.applyConstraint('perpendicular')}>⟂ Hacer Perpendiculares</button>
               </div>
             )}
           </div>
 
-          {store.constraints.length > 0 && (
+          {(store.constraints || []).length > 0 && (
             <>
               <label style={{marginTop:'10px'}}>Vínculos Activos</label>
               <div style={{maxHeight:'150px', overflowY:'auto', display:'flex', flexDirection:'column', gap:'4px'}}>
