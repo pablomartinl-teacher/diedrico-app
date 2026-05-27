@@ -27,7 +27,7 @@ interface CadStore {
   selectedElements: { exId: string; type: 'punto' | 'recta' | 'plano'; id: string; label: string }[];
   constraints: Constraint[];
   
-  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number, sheetZoom: number, activeTool: 'pointer'|'pan'}>) => void;
+  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number, sheetZoom: number, activeTool: 'pointer'|'pan', constraints: Constraint[]}>) => void;
   setPrinting: (val: boolean) => void;
   pushHistory: (nextExercises: Exercise[]) => void;
   undo: () => void;
@@ -162,10 +162,11 @@ export const useStore = create<CadStore>()((set, get) => ({
 
   clearSelection: () => set({ selectedElements: [] }),
 
-  applyConstraint: (type) => set((state) => {
-    if (state.selectedElements.length !== 2) return {};
+  applyConstraint: (type) => {
+    const state = get();
+    if (state.selectedElements.length !== 2) return;
     const [e1, e2] = state.selectedElements;
-    if (e1.exId !== e2.exId) return {};
+    if (e1.exId !== e2.exId) return;
 
     const newConstraint: Constraint = {
       id: uid(), type, exId: e1.exId,
@@ -181,12 +182,12 @@ export const useStore = create<CadStore>()((set, get) => ({
       return cloned;
     });
 
-    return {
+    set({
       constraints: [...state.constraints, newConstraint],
-      exercises: nextExercises,
       selectedElements: []
-    };
-  }),
+    });
+    get().pushHistory(nextExercises);
+  },
 
   removeConstraintsFor: (id) => set((state) => ({
     constraints: state.constraints.filter(c => c.elem1Id !== id && c.elem2Id !== id)
@@ -505,12 +506,11 @@ export const useStore = create<CadStore>()((set, get) => ({
 // 2. EL MOTOR DE DIBUJO CAD CON RESOLUCIÓN FIJA
 // ==========================================
 function View2D({ ex }: { ex: Exercise }) {
-  const { updateNode, updatePlane, updatePlaneEndpoint, updateSegment, updateSystem, removeElement, togglePlaneType, selectElement, activeTool, selectedElements, isPrinting } = useStore();
+  const { updateSegment, updatePlane, updatePlaneEndpoint, updateSystem, selectElement, activeTool, selectedElements, isPrinting } = useStore();
   const { ltY, originX, ppX, reqRegla, reqPP, reqOrigin, planes, pts, segments } = ex.state;
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ w: 800, h: 400 });
-  const [contextMenu, setContextMenu] = useState<{x:number, y:number, items: any[]} | null>(null);
 
   useLayoutEffect(() => {
     if (!containerRef.current) return;
@@ -527,6 +527,8 @@ function View2D({ ex }: { ex: Exercise }) {
 
   const handleHover = (e: any) => { if(activeTool==='pointer') { e.target.moveToTop(); e.target.scale({x:1.3, y:1.3}); document.body.style.cursor='pointer'; } };
   const handleOut = (e: any) => { e.target.scale({x:1, y:1}); document.body.style.cursor='default'; };
+  const handleHoverLine = () => { document.body.style.cursor='pointer'; };
+  const handleOutLine = () => { document.body.style.cursor='default'; };
 
   const drawScene = (ctx: any) => {
     const b = ex.state.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
@@ -584,10 +586,13 @@ function View2D({ ex }: { ex: Exercise }) {
             <Group visible={!isPrinting}>
               {/* HITBOXES Y NODOS DE CONTROL INTERACTIVOS */}
               {segments.map(seg => (
-                <Line key={seg.id} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || 'r'}`); }} />
+                <Line key={`hit-${seg.id}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || 'r'}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
               ))}
               {planes.map(pl => (
-                <Line key={pl.id} points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); }} />
+                <Group key={`hit-pl-${pl.id}`}>
+                   <Line points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
+                   <Line points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} stroke="transparent" strokeWidth={sc(22)} onClick={() => { if(activeTool==='pointer') selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); }} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} />
+                </Group>
               ))}
               
               {/* TIRADORES DE ARRASTRE CAD */}
@@ -645,7 +650,7 @@ export default function App() {
         .canvas-viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 40px; }
         
         .sheet-container { transform: scale(${sheetZoom / 100}); transform-origin: top center; transition: transform 0.2s ease; }
-        .page-sheet { background: #ffffff; width: ${PAGE_W}; min-height: 297mm; padding: 4mm; color: #000000; box-sizing: border-box; break-inside: avoid; box-shadow: 0 20px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
+        .page-sheet { background: #ffffff; width: ${PAGE_W}; min-height: 297mm; padding: 4mm; color: #000000; box-sizing: border-box; break-inside: avoid; box-shadow: 0 20px 40px rgba(0,0,0,0.5); display: flex; flex-direction: column; margin-bottom: 30px; }
         .page-border { border: 2px solid #000; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: #fff; position: relative; }
         
         .cajetin { width: ${pageSize === 'A3' ? '204mm' : '100%'}; border-right: ${pageSize === 'A3' ? '2px solid black' : 'none'}; border-bottom: 2px solid black; background: #fff; }
@@ -831,7 +836,7 @@ export default function App() {
             {selectedElements.length === 0 && <span style={{color:'#64748b', fontStyle:'italic'}}>Usa la flecha para tocar elementos de la hoja y enlazarlos geométricamente...</span>}
             
             {selectedElements.map((item, idx) => (
-              <div key={item.id} style={{display:'flex', justifyBetween:'center', alignItems:'center', background:'#242432', padding:'6px 10px', borderRadius:'4px', marginBottom:'6px', borderLeft:'3px solid #ff9f43'}}>
+              <div key={item.id} style={{display:'flex', justifyContent:'space-between', alignItems:'center', background:'#242432', padding:'6px 10px', borderRadius:'4px', marginBottom:'6px', borderLeft:'3px solid #ff9f43'}}>
                 <span>{item.label}</span>
               </div>
             ))}
@@ -839,8 +844,8 @@ export default function App() {
             {selectedElements.length === 2 && (
               <div style={{marginTop:'14px', display:'flex', flexDirection:'column', gap:'6px'}}>
                 <label style={{color:'#ff9f43'}}>Vincular Elementos:</label>
-                <button className="cad-btn" style={{background:'#242432', borderColor:'#ff9f43'}} onClick={() => applyConstraint('parallel')}>平行 Hacer Paralelos Constantes</button>
-                <button className="cad-btn" style={{background:'#242432', borderColor:'#ff9f43'}} onClick={() => applyConstraint('perpendicular')}>⟂ Hacer Perpendiculares Constantes</button>
+                <button className="cad-btn" style={{background:'#242432', borderColor:'#ff9f43'}} onClick={() => applyConstraint('parallel')}>平行 Hacer Paralelos</button>
+                <button className="cad-btn" style={{background:'#242432', borderColor:'#ff9f43'}} onClick={() => applyConstraint('perpendicular')}>⟂ Hacer Perpendiculares</button>
               </div>
             )}
           </div>
