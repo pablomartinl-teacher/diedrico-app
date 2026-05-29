@@ -6,12 +6,12 @@ import { Stage, Layer, Shape, Circle, Group, Line } from 'react-konva';
 // 1. EL CEREBRO MATEMÁTICO (ZUSTAND)
 // ==========================================
 export interface ExNode { id: string; t: string; x: number; y: number; pairId?: string; }
-export interface ExPlane { id: string; name: string; type: string; vX: number; p1: {x:number, y:number}; p2: {x:number, y:number}; customStyle?: 'solid' | 'dashed'; }
-export interface ExSegment { id: string; label: string; p1: {x:number, y:number}; p2: {x:number, y:number}; isDashed?: boolean; customStyle?: 'solid' | 'dashed'; }
+export interface ExPlane { id: string; name: string; type: string; vX: number; p1: {x:number, y:number}; p2: {x:number, y:number}; customStyle?: 'solid' | 'dashed'; color?: string; }
+export interface ExSegment { id: string; label: string; p1: {x:number, y:number}; p2: {x:number, y:number}; isDashed?: boolean; customStyle?: 'solid' | 'dashed'; color?: string; }
 export interface Constraint { id: string; type: 'parallel' | 'perpendicular'; exId: string; elem1Id: string; elem1Type: 'recta' | 'plano'; elem2Id: string; elem2Type: 'recta' | 'plano'; angleDelta: number; }
 export interface Exercise {
   id: string; title: string; type: string; w: string; h: string; dataStr: string;
-  state: { ltY: number; originX: number; ppX: number; reqRegla: boolean; reqPP: boolean; reqOrigin: boolean; planes: ExPlane[]; segments: ExSegment[]; pts: {id:string, name:string, nodes:ExNode[]}[]; bounds?: { ltX1: number; ltX2: number; oY1: number; oY2: number; pY1: number; pY2: number; } };
+  state: { ltY: number; originX: number; ppX: number; reqRegla: boolean; reqPP: boolean; reqOrigin: boolean; planes: ExPlane[]; segments: ExSegment[]; pts: {id:string, name:string, nodes:ExNode[], color?: string}[]; bounds?: { ltX1: number; ltX2: number; oY1: number; oY2: number; pY1: number; pY2: number; } };
 }
 
 interface CadStore {
@@ -43,6 +43,7 @@ interface CadStore {
   updatePlaneEndpoint: (exId: string, planeId: string, traceNum: 1|2, newX: number, newY: number) => void;
   togglePlaneType: (exId: string, planeId: string) => void;
   toggleLineStyle: (exId: string, elemType: 'recta' | 'plano', elemId: string) => void;
+  updateColor: (exId: string, elemType: 'punto' | 'recta' | 'plano', elemId: string, color: string) => void;
   updateSegment: (exId: string, segId: string, pointIndex: 1|2, newX: number, newY: number) => void;
   updateSystem: (exId: string, target: string, valX: number, valY: number) => void;
   addFreeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano') => void;
@@ -51,6 +52,7 @@ interface CadStore {
   updateExerciseText: (exId: string, field: 'title' | 'dataStr', text: string) => void;
   saveData: () => void;
   loadData: () => void;
+  importData: (newExs: Exercise[]) => void;
   downloadData: () => void;
 }
 
@@ -107,7 +109,6 @@ function enforceConstraintPair(ex: Exercise, c: Constraint, structuralChangeOnId
   }
 }
 
-// PROTECCIÓN: Si los datos guardados tienen un formato inválido, inicializa limpio.
 let initialExercises: Exercise[] = [];
 try {
   const savedData = localStorage.getItem('diedrico_autosave');
@@ -196,6 +197,10 @@ export const useStore = create<CadStore>()((set, get) => ({
   loadData: () => { 
     const d = localStorage.getItem('diedrico_pro_data'); 
     if (d) { set({ exercises: JSON.parse(d) }); get().commitHistory(); } else alert("No hay datos guardados."); 
+  },
+  importData: (newExs) => {
+    set({ exercises: newExs, history: [newExs], historyIndex: 0, selectedElements: [], constraints: [] });
+    localStorage.setItem('diedrico_autosave', JSON.stringify(newExs));
   },
   downloadData: () => { 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(get().exercises));
@@ -437,6 +442,18 @@ export const useStore = create<CadStore>()((set, get) => ({
     })}));
     get().commitHistory();
   },
+  
+  updateColor: (exId, elemType, elemId, color) => {
+    set(st => ({ exercises: st.exercises.map(ex => {
+      if(ex.id !== exId) return ex;
+      let s = {...ex.state};
+      if(elemType === 'punto') s.pts = s.pts.map(p => p.id === elemId ? {...p, color} : p);
+      else if(elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? {...seg, color} : seg);
+      else if(elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, color} : pl);
+      return {...ex, state: s};
+    })}));
+    get().commitHistory();
+  },
 
   updateExerciseText: (exId, field, text) => {
     set(st => ({ exercises: st.exercises.map(ex => ex.id === exId ? { ...ex, [field]: text } : ex) }));
@@ -575,25 +592,26 @@ function View2D({ ex }: { ex: Exercise }) {
   const handleHoverLine = () => { document.body.style.cursor='pointer'; };
   const handleOutLine = () => { document.body.style.cursor='default'; };
 
-  const drawHaloText = (ctx: any, text: string, x: number, y: number, font = getFont(15, "bold"), align = "left") => {
+  const drawHaloText = (ctx: any, text: string, x: number, y: number, font = getFont(15, "bold"), align = "left", color = "black") => {
     if (!text) return;
     ctx.save(); ctx.font = font; ctx.strokeStyle = "white"; ctx.lineWidth = sc(4); ctx.lineJoin = "round"; ctx.textAlign = align;
-    ctx.strokeText(text, x, y); ctx.fillStyle = "black"; ctx.fillText(text, x, y); ctx.restore();
+    ctx.strokeText(text, x, y); ctx.fillStyle = color; ctx.fillText(text, x, y); ctx.restore();
   };
 
   const drawScene = (ctx: any) => {
     const b = ex.state?.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
-    let dynLabels: {text: string, x: number, y: number, font: string}[] = [];
-    const queueLabel = (text: string, x: number, y: number, font = getFont(15, "bold")) => { dynLabels.push({text, x, y, font}); };
+    let dynLabels: {text: string, x: number, y: number, font: string, color: string}[] = [];
+    const queueLabel = (text: string, x: number, y: number, font = getFont(15, "bold"), color = "black") => { dynLabels.push({text, x, y, font, color}); };
 
     const drawTrueVisibilitySegmentLocal = (seg: ExSegment, stSegments: ExSegment[], isVerticalProj: boolean) => {
+      const c = seg.color || "black";
       if (seg.customStyle === 'dashed' || (!seg.customStyle && seg.isDashed)) {
          ctx.beginPath(); ctx.setLineDash([sc(5), sc(5)]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
-         if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2, (seg.p1.y+seg.p2.y)/2); return;
+         if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2, (seg.p1.y+seg.p2.y)/2, undefined, c); return;
       }
       if (seg.customStyle === 'solid') {
          ctx.beginPath(); ctx.setLineDash([]); ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke();
-         if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5)); return;
+         if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), undefined, c); return;
       }
 
       let tVals = [0, 1];
@@ -604,7 +622,7 @@ function View2D({ ex }: { ex: Exercise }) {
           let in1st = isVerticalProj ? (seg.p1.y < ltY) : (seg.p1.y > ltY);
           ctx.beginPath(); ctx.setLineDash(in1st ? [] : [sc(6), sc(4)]);
           ctx.moveTo(seg.p1.x, seg.p1.y); ctx.lineTo(seg.p2.x, seg.p2.y); ctx.stroke(); ctx.setLineDash([]);
-          if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5)); return;
+          if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), undefined, c); return;
       }
 
       let dy = seg.p2.y - seg.p1.y;
@@ -632,7 +650,7 @@ function View2D({ ex }: { ex: Exercise }) {
           ctx.moveTo(seg.p1.x + tA * dx, seg.p1.y + tA * dy); ctx.lineTo(seg.p1.x + tB * dx, seg.p1.y + tB * dy); ctx.stroke();
       }
       ctx.setLineDash([]);
-      if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5));
+      if (seg.label) queueLabel(seg.label, (seg.p1.x+seg.p2.x)/2 + sc(5), (seg.p1.y+seg.p2.y)/2 - sc(5), undefined, c);
     };
 
     ctx.strokeStyle = "black"; ctx.lineWidth = 2.2;
@@ -663,7 +681,8 @@ function View2D({ ex }: { ex: Exercise }) {
 
     (planes || []).forEach((pl: ExPlane) => {
       const isSel = store.selectedElements.some(s => s.id === pl.id);
-      ctx.strokeStyle = isSel ? "#ff9f43" : "black"; 
+      const c = pl.color || "black";
+      ctx.strokeStyle = isSel ? "#ff9f43" : c; 
       ctx.lineWidth = isSel ? 3.5 : 2.2;
       
       const applyDash = (isAutoDashed: boolean) => {
@@ -674,26 +693,26 @@ function View2D({ ex }: { ex: Exercise }) {
 
       if (pl.type === 'horizontal') {
         applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke(); ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), undefined, c);
       } else if (pl.type === 'frontal') {
         applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), undefined, c);
       } else if (pl.type === 'paralelo_lt') {
         applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), undefined, c);
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), undefined, c);
       } else {
         applyDash(pl.p2.y >= ltY); ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
         applyDash(pl.p1.y <= ltY); ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
-        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), getFont(16, "bold"));
-        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), getFont(16, "bold"));
+        if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), undefined, c);
+        if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), undefined, c);
       }
     });
 
     (segments || []).forEach((seg: ExSegment) => {
         const isSel = store.selectedElements.some(s => s.id === seg.id);
-        ctx.strokeStyle = isSel ? "#ff9f43" : "black"; 
+        ctx.strokeStyle = isSel ? "#ff9f43" : (seg.color || "black"); 
         ctx.lineWidth = isSel ? 3.5 : 2.2;
         const isV = seg.label.includes('2');
         drawTrueVisibilitySegmentLocal(seg, segments, isV);
@@ -703,12 +722,12 @@ function View2D({ ex }: { ex: Exercise }) {
     (pts || []).forEach((p: any) => { if(p.nodes.length === 2) { ctx.beginPath(); ctx.moveTo(p.nodes[0].x, p.nodes[0].y); ctx.lineTo(p.nodes[1].x, p.nodes[1].y); ctx.stroke(); } });
     ctx.setLineDash([]);
     
-    ctx.fillStyle = "black";
     (pts || []).forEach((p: any) => {
+      const c = p.color || "black";
       p.nodes.forEach((n: ExNode) => { 
-        ctx.beginPath(); ctx.strokeStyle = "black"; ctx.lineWidth = sc(1.5);
+        ctx.beginPath(); ctx.strokeStyle = c; ctx.lineWidth = sc(1.5);
         let cs = sc(5); ctx.moveTo(n.x, n.y - cs); ctx.lineTo(n.x, n.y + cs); ctx.moveTo(n.x - cs, n.y); ctx.lineTo(n.x + cs, n.y); ctx.stroke();
-        if (p.name) queueLabel(`${p.name}${n.t}`, n.x + sc(8), n.y - sc(8)); 
+        if (p.name) queueLabel(`${p.name}${n.t}`, n.x + sc(8), n.y - sc(8), undefined, c); 
       });
     });
 
@@ -725,7 +744,7 @@ function View2D({ ex }: { ex: Exercise }) {
         if(group.length > 1) {
             let combinedText = group.map(g => g.text).join(' ≡ ');
             let avgX = group.reduce((sum, g) => sum + g.x, 0) / group.length; let avgY = group.reduce((sum, g) => sum + g.y, 0) / group.length;
-            mergedLabels.push({ text: combinedText, x: avgX, y: avgY, font: group[0].font });
+            mergedLabels.push({ text: combinedText, x: avgX, y: avgY, font: group[0].font, color: group[0].color });
         } else mergedLabels.push(dynLabels[i]);
     }
 
@@ -744,7 +763,7 @@ function View2D({ ex }: { ex: Exercise }) {
             }
         }
     }
-    mergedLabels.forEach(lbl => drawHaloText(ctx, lbl.text, lbl.x, lbl.y, lbl.font));
+    mergedLabels.forEach(lbl => drawHaloText(ctx, lbl.text, lbl.x, lbl.y, lbl.font, "left", lbl.color));
   };
 
   const b = ex.state?.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
@@ -904,7 +923,26 @@ function View2D({ ex }: { ex: Exercise }) {
                            setContextMenu(null);
                         }}>🔄 Línea</div>
                 )}
+
+                {!isSys && (
+                   <label style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#10b981', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s', position:'relative', overflow:'hidden'}}
+                        onMouseEnter={e => e.currentTarget.style.background = '#34d399'} onMouseLeave={e => e.currentTarget.style.background = '#10b981'} title="Cambiar Color">
+                      🎨 Color
+                      <input type="color" defaultValue="#000000" style={{position:'absolute', opacity:0, top:0, left:0, width:'100%', height:'100%', cursor:'pointer'}}
+                             onChange={(e) => { let type: 'punto' | 'recta' | 'plano' = it.type; store.updateColor(ex.id, type, rId, e.target.value); }} />
+                   </label>
+                )}
                 
+                {!isSys && (
+                  <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
+                       onMouseEnter={e => { e.currentTarget.style.background = '#475569'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; }}
+                       onClick={() => {
+                          let type: 'punto' | 'recta' | 'plano' = it.type;
+                          store.updateName(ex.id, type, rId, "");
+                          setContextMenu(null);
+                       }}>🆑 Ocultar</div>
+                )}
+
                 {!isSys && (
                   <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#ef4444', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
                        onMouseEnter={e => e.currentTarget.style.background = '#f87171'} onMouseLeave={e => e.currentTarget.style.background = '#ef4444'}
@@ -1127,7 +1165,16 @@ export default function App() {
           
           <div style={{display: 'flex', gap: '8px', marginTop: 'auto'}}>
             <button className="btn-panel" onClick={store.saveData} style={{ flex: 1, background: '#f59e0b', color:'#000' }}>💾 Guardar</button>
-            <button className="btn-panel" onClick={store.loadData} style={{ flex: 1, background: '#3b82f6' }}>📂 Cargar</button>
+            <label className="btn-panel" style={{ flex: 1, background: '#3b82f6', color: '#fff', margin: 0, cursor:'pointer', textAlign:'center', display:'flex', justifyContent:'center', alignItems:'center' }}>
+              <input type="file" accept=".json" style={{display:'none'}} onChange={(e) => {
+                const file = e.target.files?.[0]; if (!file) return;
+                const r = new FileReader();
+                r.onload = (ev) => {
+                  try { const parsed = JSON.parse(ev.target?.result as string); if(Array.isArray(parsed)) store.importData(parsed); } catch(err) { alert("Archivo inválido"); }
+                }; r.readAsText(file); e.target.value = '';
+              }} />
+              📂 Cargar
+            </label>
           </div>
           <button className="btn-panel" onClick={store.downloadData} style={{ background: '#10b981', color:'#000' }}>⬇️ Descargar (.json)</button>
           <button className="btn-panel" onClick={handlePrint} style={{ background: '#8b5cf6', color: '#fff', padding:'15px' }}>🖨️ Imprimir Lámina</button>
@@ -1152,7 +1199,7 @@ export default function App() {
               <option value="150">150%</option>
             </select>
             
-            <span style={{fontSize:'12px', color:'#94a3b8', fontStyle:'italic', marginLeft:'auto'}}>Izquierdo: Seleccionar • Derecho: Opciones</span>
+            <span style={{fontSize:'12px', color:'#94a3b8', fontStyle:'italic', marginLeft:'auto'}}>Izquierdo: Selección Múltiple • Derecho: Opciones de Edición</span>
           </div>
 
           <div className="canvas-viewport">
