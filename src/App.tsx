@@ -151,12 +151,12 @@ export const useStore = create<CadStore>()((set, get) => ({
     set(s => ({ evaluation: { ...s.evaluation, isOpen: true, loading: true, result: '', exId: ex.id, img: imgBase64 } }));
     const key = get().geminiKey;
     if (!key) {
-        set(s => ({ evaluation: { ...s.evaluation, loading: false, result: 'Por favor, introduce tu API Key de Gemini para activar el motor de corrección.' } }));
+        set(s => ({ evaluation: { ...s.evaluation, loading: false, result: 'Por favor, introduce tu API Key de Gemini para activar el solucionador.' } }));
         return;
     }
     try {
         const base64Data = imgBase64.split(',')[1];
-        const prompt = `Eres un profesor estricto de Dibujo Técnico (Sistema Diédrico) corrigiendo a un alumno de 1º de Bachillerato. Evalúa el ejercicio titulado "${ex.title}" (Datos: ${ex.dataStr}). NO expliques la teoría ni des pasos de resolución. Analiza directamente el dibujo de la imagen adjunta. Señala EXCLUSIVAMENTE los errores visuales y geométricos exactos que ves en los trazos, falta de paralelismo/perpendicularidad, visibilidad incorrecta (líneas continuas vs discontinuas) o errores de nomenclatura. Al final, da la calificación final del 0 al 10. Ve directo al grano.`;
+        const prompt = `Eres un experto en Dibujo Técnico (Sistema Diédrico). Tu tarea es resolver el siguiente ejercicio para un alumno de 1º de Bachillerato: "${ex.title}". Datos del ejercicio: ${ex.dataStr}. No quiero que evalúes la imagen adjunta para decir si está bien o mal, ignora los trazos erróneos que pueda haber. Úsala solo para tener contexto. Usa tu conocimiento para describir EXACTAMENTE cómo es la SOLUCIÓN FINAL dibujada de este ejercicio. Explica qué líneas, trazas o puntos conforman la solución final en la hoja, cómo interactúan (paralelismos, perpendicularidades, intersecciones, visibilidad de partes ocultas) y qué resultado visual exacto debe quedar dibujado para que el ejercicio esté perfecto. Ve directo al grano.`;
         
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
             method: 'POST',
@@ -167,7 +167,7 @@ export const useStore = create<CadStore>()((set, get) => ({
         });
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
-        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo generar una evaluación.";
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo generar una resolución.";
         set(s => ({ evaluation: { ...s.evaluation, loading: false, result: text } }));
     } catch(e: any) {
         set(s => ({ evaluation: { ...s.evaluation, loading: false, result: 'Error en la conexión con la API: ' + e.message } }));
@@ -828,13 +828,10 @@ function View2D({ ex }: { ex: Exercise }) {
          else if (label.includes('Punto')) label = 'Punto ' + label.replace(/Punto /, '').replace(/[12]/g, '');
          if (!uniqueMap.has(rId)) uniqueMap.set(rId, { label: label.trim(), id: s.attrs.id, type: s.attrs.name.includes('Punto') ? 'punto' : s.attrs.name.includes('Plano') || s.attrs.name.includes('Traza') ? 'plano' : 'recta' });
        });
+       
        let cX = e.evt.clientX; let cY = e.evt.clientY;
        if (isTouch && e.evt.touches && e.evt.touches.length > 0) { cX = e.evt.touches[0].clientX; cY = e.evt.touches[0].clientY; }
        
-       const menuW = 260; const menuH = 350;
-       if (cX + menuW > window.innerWidth) cX = window.innerWidth - menuW;
-       if (cY + menuH > window.innerHeight) cY = window.innerHeight - menuH;
-
        setContextMenu({ x: cX, y: cY, items: Array.from(uniqueMap.values()) });
      } else setContextMenu(null);
   };
@@ -935,8 +932,7 @@ function View2D({ ex }: { ex: Exercise }) {
 
       {contextMenu && (
         <>
-          {isMobile && <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.5)', zIndex:9998}} onClick={() => setContextMenu(null)} />}
-          <div style={{position: 'fixed', top: isMobile ? '50%' : contextMenu.y, left: isMobile ? '50%' : contextMenu.x, transform: isMobile ? 'translate(-50%, -50%)' : 'none', background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: isMobile ? '90vw' : 'max-content', maxHeight: isMobile ? '80vh' : 'auto', overflowY: isMobile ? 'auto' : 'visible'}}>
+          <div style={{position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: 'max-content', maxWidth: '320px', maxHeight: '80vh', overflowY: 'auto'}}>
             
             {store.selectedElements.length === 2 && store.selectedElements[0].exId === ex.id && (
               <div style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px dashed #444' }}>
@@ -1404,7 +1400,7 @@ export default function App() {
                             <button className="btn-mini" style={{ marginLeft: 'auto', background: '#a855f7', color: 'white' }} onClick={() => {
                                 const canvas = document.getElementById(`stage-${ex.id}`)?.querySelector('canvas');
                                 if(canvas) store.evaluateWithGemini(ex, canvas.toDataURL());
-                            }}>✨ Autocorrector 2.5</button>
+                            }}>✨ Resuelve IA 2.5</button>
                           </div>
 
                           <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -1453,7 +1449,7 @@ export default function App() {
                               <div style={{display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100%', color:'#d8b4fe', gap:'15px'}}>
                                   <div style={{width:'40px', height:'40px', border:'4px solid #a855f7', borderTop:'4px solid transparent', borderRadius:'50%', animation:'spin 1s linear infinite'}}></div>
                                   <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-                                  <span>Analizando trazos, proyecciones y nomenclatura...</span>
+                                  <span>Analizando coordenadas, trazas y resolución espacial...</span>
                               </div>
                           ) : (
                               <div style={{whiteSpace:'pre-wrap', color: store.evaluation.result.includes('Error') ? '#ef4444' : '#e2e8f0'}}>{store.evaluation.result || 'Esperando inicio...'}</div>
@@ -1463,7 +1459,7 @@ export default function App() {
                   
                   {store.geminiKey && !store.evaluation.loading && (
                       <div style={{display:'flex', justifyContent:'flex-end'}}>
-                          <button className="btn-panel" onClick={() => store.evaluateWithGemini(store.exercises.find(e=>e.id === store.evaluation.exId)!, store.evaluation.img)} style={{background:'#a855f7', color:'white', padding:'12px 24px', fontSize:'15px'}}>↻ Iniciar Evaluación</button>
+                          <button className="btn-panel" onClick={() => store.evaluateWithGemini(store.exercises.find(e=>e.id === store.evaluation.exId)!, store.evaluation.img)} style={{background:'#a855f7', color:'white', padding:'12px 24px', fontSize:'15px'}}>↻ Generar Solución</button>
                       </div>
                   )}
               </div>
