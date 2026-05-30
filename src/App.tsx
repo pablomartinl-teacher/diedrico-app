@@ -156,7 +156,7 @@ export const useStore = create<CadStore>()((set, get) => ({
     }
     try {
         const base64Data = imgBase64.split(',')[1];
-        const prompt = `Eres un asistente experto en Dibujo Técnico (Sistema Diédrico) diseñado para corregir láminas de alumnos de 1º de Bachillerato. Evalúa este ejercicio titulado "${ex.title}". Datos del ejercicio: ${ex.dataStr}. Analiza la imagen adjunta que contiene la resolución del alumno. Revisa la corrección de las proyecciones, la visibilidad de los trazos (líneas continuas/discontinuas), el uso correcto de la nomenclatura y el cumplimiento de las restricciones geométricas. Proporciona una rúbrica breve y una calificación final del 0 al 10.`;
+        const prompt = `Eres un profesor estricto de Dibujo Técnico (Sistema Diédrico) corrigiendo a un alumno de 1º de Bachillerato. Evalúa el ejercicio titulado "${ex.title}" (Datos: ${ex.dataStr}). NO expliques la teoría ni des pasos de resolución. Analiza directamente el dibujo de la imagen adjunta. Señala EXCLUSIVAMENTE los errores visuales y geométricos exactos que ves en los trazos, falta de paralelismo/perpendicularidad, visibilidad incorrecta (líneas continuas vs discontinuas) o errores de nomenclatura. Al final, da la calificación final del 0 al 10. Ve directo al grano.`;
         
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
             method: 'POST',
@@ -1140,7 +1140,7 @@ export default function App() {
         .btn-panel:hover { background: #00d2ff; color: #000; border-color: #00d2ff; }
         .btn-panel:disabled { opacity: 0.3; cursor: not-allowed; }
         
-        select, input[type="text"], input[type="number"] { background: #1c1c24; color: #fff; border: 1px solid #2d2d3a; padding: 10px; border-radius: 6px; font-size: 14px; width: 100%; box-sizing: border-box; }
+        select, input[type="text"], input[type="number"], input[type="password"] { background: #1c1c24; color: #fff; border: 1px solid #2d2d3a; padding: 10px; border-radius: 6px; font-size: 14px; width: 100%; box-sizing: border-box; }
         .sidebar label { font-size: 12px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
         
         .mobile-header { display: none; }
