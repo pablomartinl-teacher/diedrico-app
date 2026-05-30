@@ -25,6 +25,12 @@ interface CadStore {
   sheetZoom: number;
   selectedElements: { exId: string; type: 'punto' | 'recta' | 'plano'; id: string; label: string }[];
   constraints: Constraint[];
+  geminiKey: string;
+  evaluation: { isOpen: boolean; loading: boolean; result: string; exId: string | null; img: string };
+  
+  setGeminiKey: (k: string) => void;
+  setEvaluation: (data: Partial<CadStore['evaluation']>) => void;
+  evaluateWithGemini: (ex: Exercise, imgBase64: string) => Promise<void>;
   
   commitHistory: () => void;
   undo: () => void;
@@ -130,6 +136,43 @@ export const useStore = create<CadStore>()((set, get) => ({
   sheetZoom: 100,
   selectedElements: [],
   constraints: [],
+  
+  geminiKey: localStorage.getItem('diedrico_gemini_key') || '',
+  evaluation: { isOpen: false, loading: false, result: '', exId: null, img: '' },
+  
+  setGeminiKey: (k: string) => {
+    localStorage.setItem('diedrico_gemini_key', k);
+    set({ geminiKey: k });
+  },
+  
+  setEvaluation: (data) => set(s => ({ evaluation: { ...s.evaluation, ...data } })),
+  
+  evaluateWithGemini: async (ex, imgBase64) => {
+    set(s => ({ evaluation: { ...s.evaluation, isOpen: true, loading: true, result: '', exId: ex.id, img: imgBase64 } }));
+    const key = get().geminiKey;
+    if (!key) {
+        set(s => ({ evaluation: { ...s.evaluation, loading: false, result: 'Por favor, introduce tu API Key de Gemini para activar el motor de corrección.' } }));
+        return;
+    }
+    try {
+        const base64Data = imgBase64.split(',')[1];
+        const prompt = `Eres un asistente experto en Dibujo Técnico (Sistema Diédrico) diseñado para corregir láminas de alumnos de 1º de Bachillerato. Evalúa este ejercicio titulado "${ex.title}". Datos del ejercicio: ${ex.dataStr}. Analiza la imagen adjunta que contiene la resolución del alumno. Revisa la corrección de las proyecciones, la visibilidad de los trazos (líneas continuas/discontinuas), el uso correcto de la nomenclatura y el cumplimiento de las restricciones geométricas. Proporciona una rúbrica breve y una calificación final del 0 al 10.`;
+        
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64Data } }] }]
+            })
+        });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "No se pudo generar una evaluación.";
+        set(s => ({ evaluation: { ...s.evaluation, loading: false, result: text } }));
+    } catch(e: any) {
+        set(s => ({ evaluation: { ...s.evaluation, loading: false, result: 'Error en la conexión con la API: ' + e.message } }));
+    }
+  },
 
   commitHistory: () => set(state => {
     const currentJSON = JSON.stringify(state.exercises);
@@ -787,12 +830,17 @@ function View2D({ ex }: { ex: Exercise }) {
        });
        let cX = e.evt.clientX; let cY = e.evt.clientY;
        if (isTouch && e.evt.touches && e.evt.touches.length > 0) { cX = e.evt.touches[0].clientX; cY = e.evt.touches[0].clientY; }
+       
+       const menuW = 260; const menuH = 350;
+       if (cX + menuW > window.innerWidth) cX = window.innerWidth - menuW;
+       if (cY + menuH > window.innerHeight) cY = window.innerHeight - menuH;
+
        setContextMenu({ x: cX, y: cY, items: Array.from(uniqueMap.values()) });
      } else setContextMenu(null);
   };
 
   return (
-    <div style={{width: '100%', height: '100%', position: 'relative', overflow: 'hidden'}}>
+    <div id={`stage-${ex.id}`} style={{width: '100%', height: '100%', position: 'relative', overflow: 'hidden'}}>
       <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
         <Stage width={dim.w || 800} height={dim.h || 400} 
                onDragEnd={() => { setSelectedId(null); store.commitHistory(); }}
@@ -1266,7 +1314,7 @@ export default function App() {
               <option value="150">150%</option>
             </select>
             
-            {!isMobile && <span style={{fontSize:'12px', color:'#94a3b8', fontStyle:'italic', marginLeft:'auto'}}>Izq: Selección • Der: Opciones</span>}
+            {!isMobile && <span style={{fontSize:'12px', color:'#94a3b8', fontStyle:'italic', marginLeft:'auto'}}>Izq: Selección Múltiple • Der: Opciones de Edición</span>}
           </div>
 
           <div className="canvas-viewport">
@@ -1347,10 +1395,16 @@ export default function App() {
                           
                           {ex.dataStr && <div className="exercise-data" contentEditable suppressContentEditableWarning onBlur={e => store.updateExerciseText(ex.id, 'dataStr', e.currentTarget.innerText)}>{ex.dataStr}</div>}
                           
-                          <div className="no-print" style={{ display: 'flex', gap: '6px', padding: '6px 12px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea' }}>
+                          <div className="no-print" style={{ display: 'flex', gap: '6px', padding: '6px 12px', background: '#f8f9fa', borderBottom: '1.5px solid #eaeaea', alignItems:'center' }}>
                             <button className="btn-mini" onClick={() => store.addFreeElement(ex.id, 'punto')}>+ Pto</button>
                             <button className="btn-mini" onClick={() => store.addFreeElement(ex.id, 'recta')}>+ Rct</button>
                             <button className="btn-mini" onClick={() => store.addFreeElement(ex.id, 'plano')}>+ Pln</button>
+                            
+                            {/* AUTOCORRECTOR */}
+                            <button className="btn-mini" style={{ marginLeft: 'auto', background: '#a855f7', color: 'white' }} onClick={() => {
+                                const canvas = document.getElementById(`stage-${ex.id}`)?.querySelector('canvas');
+                                if(canvas) store.evaluateWithGemini(ex, canvas.toDataURL());
+                            }}>✨ Autocorrector 2.5</button>
                           </div>
 
                           <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -1367,6 +1421,54 @@ export default function App() {
         </div>
 
       </div>
+
+      {/* MODAL DEL AUTOCORRECTOR GEMINI 2.5 */}
+      {store.evaluation.isOpen && (
+          <div className="no-print" style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.85)', zIndex:10000, display:'flex', justifyContent:'center', alignItems:'center', padding:'20px', boxSizing:'border-box'}}>
+              <div style={{background:'#1e1e2f', padding:'24px', borderRadius:'10px', width:'100%', maxWidth:'750px', border:'2px solid #a855f7', display:'flex', flexDirection:'column', gap:'20px', maxHeight:'90vh', boxShadow:'0 10px 40px rgba(0,0,0,0.8)'}}>
+                  
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <h3 style={{color:'#d8b4fe', margin:0, fontSize:'20px', display:'flex', alignItems:'center', gap:'10px'}}>✨ Motor de Corrección IA <span style={{fontSize:'12px', background:'#a855f7', color:'#fff', padding:'2px 8px', borderRadius:'12px'}}>Gemini 2.5</span></h3>
+                      <button onClick={()=>store.setEvaluation({isOpen: false})} style={{background:'none', border:'none', color:'white', fontSize:'24px', cursor:'pointer', padding:0}}>✕</button>
+                  </div>
+                  
+                  {!store.geminiKey && (
+                      <div style={{background:'#2d2d3a', padding:'15px', borderRadius:'6px', borderLeft:'4px solid #00d2ff'}}>
+                          <label style={{color:'#00d2ff', display:'block', marginBottom:'8px'}}>Clave API de Google Gemini (se guarda localmente):</label>
+                          <input type="password" placeholder="AIzaSy..." onChange={e => store.setGeminiKey(e.target.value)} style={{width:'100%', padding:'10px', boxSizing:'border-box', background:'#1c1c24', color:'white', border:'1px solid #444', borderRadius:'4px'}} />
+                          <p style={{fontSize:'12px', color:'#94a3b8', margin:'8px 0 0 0'}}>* Solo necesitas introducirla una vez. Tus credenciales nunca salen de tu navegador.</p>
+                      </div>
+                  )}
+
+                  <div style={{display:'flex', gap:'20px', flex:1, overflow:'hidden', flexDirection: isMobile ? 'column' : 'row'}}>
+                      
+                      {/* PREVISUALIZACIÓN DEL EJERCICIO */}
+                      <div style={{flex: 1, background:'#0c0c0e', borderRadius:'6px', padding:'10px', border:'1px solid #444', display:'flex', justifyContent:'center', alignItems:'center'}}>
+                          <img src={store.evaluation.img} style={{maxWidth:'100%', maxHeight: isMobile ? '150px' : '300px', objectFit:'contain', background:'white'}} alt="Captura del ejercicio" />
+                      </div>
+                      
+                      {/* PANEL DE RESULTADOS */}
+                      <div style={{flex: 1.5, background:'#2d2d3a', padding:'20px', borderRadius:'6px', overflowY:'auto', color:'#e2e8f0', fontSize:'15px', lineHeight:'1.6', border:'1px solid #444'}}>
+                          {store.evaluation.loading ? (
+                              <div style={{display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100%', color:'#d8b4fe', gap:'15px'}}>
+                                  <div style={{width:'40px', height:'40px', border:'4px solid #a855f7', borderTop:'4px solid transparent', borderRadius:'50%', animation:'spin 1s linear infinite'}}></div>
+                                  <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                                  <span>Analizando trazos, proyecciones y nomenclatura...</span>
+                              </div>
+                          ) : (
+                              <div style={{whiteSpace:'pre-wrap', color: store.evaluation.result.includes('Error') ? '#ef4444' : '#e2e8f0'}}>{store.evaluation.result || 'Esperando inicio...'}</div>
+                          )}
+                      </div>
+                  </div>
+                  
+                  {store.geminiKey && !store.evaluation.loading && (
+                      <div style={{display:'flex', justifyContent:'flex-end'}}>
+                          <button className="btn-panel" onClick={() => store.evaluateWithGemini(store.exercises.find(e=>e.id === store.evaluation.exId)!, store.evaluation.img)} style={{background:'#a855f7', color:'white', padding:'12px 24px', fontSize:'15px'}}>↻ Iniciar Evaluación</button>
+                      </div>
+                  )}
+              </div>
+          </div>
+      )}
     </>
   );
 }
