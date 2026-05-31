@@ -23,11 +23,9 @@ interface CadStore {
   fontFamily: string;
   fontSize: number;
   sheetZoom: number;
-  activeTool: 'pointer' | 'pan';
   selectedElements: { exId: string; type: 'punto' | 'recta' | 'plano'; id: string; label: string }[];
   constraints: Constraint[];
-  contextMenu: { exId: string; items: any[] } | null;
-  isolatedElement: { exId: string; id: string } | null;
+  contextMenu: { exId: string; items: any[]; x: number; y: number } | null;
   geminiKey: string;
   evaluation: { isOpen: boolean; loading: boolean; result: string; exId: string | null; img: string };
   
@@ -38,10 +36,9 @@ interface CadStore {
   commitHistory: () => void;
   undo: () => void;
   redo: () => void;
-  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number, sheetZoom: number, activeTool: 'pointer'|'pan'}>) => void;
+  setPageConfig: (config: Partial<{pageSize: 'A4'|'A3', fontFamily: string, fontSize: number, sheetZoom: number}>) => void;
   setPrinting: (val: boolean) => void;
-  setContextMenu: (menu: { exId: string; items: any[] } | null) => void;
-  setIsolatedElement: (el: { exId: string; id: string } | null) => void;
+  setContextMenu: (menu: { exId: string; items: any[]; x: number; y: number } | null) => void;
   addExercise: (opts: any) => void;
   removeExercise: (id: string) => void;
   updateBoxSize: (id: string, w: string, h: string) => void;
@@ -139,11 +136,9 @@ export const useStore = create<CadStore>()((set, get) => ({
   fontFamily: "'Segoe UI', sans-serif",
   fontSize: 13,
   sheetZoom: 100,
-  activeTool: 'pointer',
   selectedElements: [],
   constraints: [],
   contextMenu: null,
-  isolatedElement: null,
   
   geminiKey: localStorage.getItem('diedrico_gemini_key') || '',
   evaluation: { isOpen: false, loading: false, result: '', exId: null, img: '' },
@@ -203,7 +198,6 @@ export const useStore = create<CadStore>()((set, get) => ({
   setPageConfig: (config) => set((state) => ({ ...state, ...config })),
   setPrinting: (val) => set({ isPrinting: val }),
   setContextMenu: (menu) => set({ contextMenu: menu }),
-  setIsolatedElement: (el) => set({ isolatedElement: el }),
 
   selectElement: (exId, type, id, label) => set((state) => {
     let list = [...(state.selectedElements || [])];
@@ -252,7 +246,7 @@ export const useStore = create<CadStore>()((set, get) => ({
     if (d) { set({ exercises: JSON.parse(d) }); get().commitHistory(); } else alert("No hay datos guardados."); 
   },
   importData: (newExs) => {
-    set({ exercises: newExs, history: [newExs], historyIndex: 0, selectedElements: [], constraints: [], contextMenu: null, isolatedElement: null });
+    set({ exercises: newExs, history: [newExs], historyIndex: 0, selectedElements: [], constraints: [], contextMenu: null });
     localStorage.setItem('diedrico_autosave', JSON.stringify(newExs));
   },
   downloadData: () => { 
@@ -625,7 +619,6 @@ function View2D({ ex }: { ex: Exercise }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ w: 800, h: 400 });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const isMobile = window.innerWidth <= 768;
   const touchTimeout = useRef<any>(null);
 
   useLayoutEffect(() => {
@@ -777,9 +770,10 @@ function View2D({ ex }: { ex: Exercise }) {
     ctx.setLineDash([]);
     
     (pts || []).forEach((p: any) => {
-      const c = p.color || "black";
+      const isSel = store.selectedElements.some(s => s.id === p.id);
+      const c = isSel ? "#ff9f43" : (p.color || "black");
       p.nodes.forEach((n: ExNode) => { 
-        ctx.beginPath(); ctx.strokeStyle = c; ctx.lineWidth = sc(1.5);
+        ctx.beginPath(); ctx.strokeStyle = c; ctx.lineWidth = isSel ? sc(3) : sc(1.5);
         let cs = sc(5); ctx.moveTo(n.x, n.y - cs); ctx.lineTo(n.x, n.y + cs); ctx.moveTo(n.x - cs, n.y); ctx.lineTo(n.x + cs, n.y); ctx.stroke();
         if (p.name) queueLabel(`${p.name}${n.t}`, n.x + sc(8), n.y - sc(8), undefined, c); 
       });
@@ -827,6 +821,7 @@ function View2D({ ex }: { ex: Exercise }) {
      if (!stage || !pos) return;
      const shapes = stage.getAllIntersections(pos);
      const handleShapes = shapes.filter((s:any) => (s.getClassName() === 'Circle' || s.getClassName() === 'Line') && s.attrs.name && s.attrs.id);
+     
      if (handleShapes.length > 0) {
        const uniqueMap = new Map();
        handleShapes.forEach((s:any) => {
@@ -1324,59 +1319,11 @@ export default function App() {
 
       </div>
 
-      {/* MODAL DEL AUTOCORRECTOR GEMINI 2.5 */}
-      {store.evaluation.isOpen && (
-          <div className="no-print" style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.85)', zIndex:10000, display:'flex', justifyContent:'center', alignItems:'center', padding:'20px', boxSizing:'border-box'}}>
-              <div style={{background:'#1e1e2f', padding:'24px', borderRadius:'10px', width:'100%', maxWidth:'750px', border:'2px solid #a855f7', display:'flex', flexDirection:'column', gap:'20px', maxHeight:'90vh', boxShadow:'0 10px 40px rgba(0,0,0,0.8)'}}>
-                  
-                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                      <h3 style={{color:'#d8b4fe', margin:0, fontSize:'20px', display:'flex', alignItems:'center', gap:'10px'}}>✨ Motor de Corrección IA <span style={{fontSize:'12px', background:'#a855f7', color:'#fff', padding:'2px 8px', borderRadius:'12px'}}>Gemini 2.5</span></h3>
-                      <button onClick={()=>store.setEvaluation({isOpen: false})} style={{background:'none', border:'none', color:'white', fontSize:'24px', cursor:'pointer', padding:0}}>✕</button>
-                  </div>
-                  
-                  {!store.geminiKey && (
-                      <div style={{background:'#2d2d3a', padding:'15px', borderRadius:'6px', borderLeft:'4px solid #00d2ff'}}>
-                          <label style={{color:'#00d2ff', display:'block', marginBottom:'8px'}}>Clave API de Google Gemini (se guarda localmente):</label>
-                          <input type="password" placeholder="AIzaSy..." onChange={e => store.setGeminiKey(e.target.value)} style={{width:'100%', padding:'10px', boxSizing:'border-box', background:'#1c1c24', color:'white', border:'1px solid #444', borderRadius:'4px'}} />
-                          <p style={{fontSize:'12px', color:'#94a3b8', margin:'8px 0 0 0'}}>* Solo necesitas introducirla una vez. Tus credenciales nunca salen de tu navegador.</p>
-                      </div>
-                  )}
-
-                  <div style={{display:'flex', gap:'20px', flex:1, overflow:'hidden', flexDirection: isMobile ? 'column' : 'row'}}>
-                      
-                      {/* PREVISUALIZACIÓN DEL EJERCICIO */}
-                      <div style={{flex: 1, background:'#0c0c0e', borderRadius:'6px', padding:'10px', border:'1px solid #444', display:'flex', justifyContent:'center', alignItems:'center'}}>
-                          <img src={store.evaluation.img} style={{maxWidth:'100%', maxHeight: isMobile ? '150px' : '300px', objectFit:'contain', background:'white'}} alt="Captura del ejercicio" />
-                      </div>
-                      
-                      {/* PANEL DE RESULTADOS */}
-                      <div style={{flex: 1.5, background:'#2d2d3a', padding:'20px', borderRadius:'6px', overflowY:'auto', color:'#e2e8f0', fontSize:'15px', lineHeight:'1.6', border:'1px solid #444'}}>
-                          {store.evaluation.loading ? (
-                              <div style={{display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100%', color:'#d8b4fe', gap:'15px'}}>
-                                  <div style={{width:'40px', height:'40px', border:'4px solid #a855f7', borderTop:'4px solid transparent', borderRadius:'50%', animation:'spin 1s linear infinite'}}></div>
-                                  <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-                                  <span>Analizando coordenadas, trazas y resolución espacial...</span>
-                              </div>
-                          ) : (
-                              <div style={{whiteSpace:'pre-wrap', color: store.evaluation.result.includes('Error') ? '#ef4444' : '#e2e8f0'}}>{store.evaluation.result || 'Esperando inicio...'}</div>
-                          )}
-                      </div>
-                  </div>
-                  
-                  {store.geminiKey && !store.evaluation.loading && (
-                      <div style={{display:'flex', justifyContent:'flex-end'}}>
-                          <button className="btn-panel" onClick={() => store.evaluateWithGemini(store.exercises.find(e=>e.id === store.evaluation.exId)!, store.evaluation.img)} style={{background:'#a855f7', color:'white', padding:'12px 24px', fontSize:'15px'}}>↻ Generar Solución</button>
-                      </div>
-                  )}
-              </div>
-          </div>
-      )}
-      
-      {/* MENÚ CONTEXTUAL GLOBAL */}
+      {/* MENÚ CONTEXTUAL (FLOTANTE EN COORDENADAS EXACTAS) */}
       {store.contextMenu && (
         <>
-          {isMobile && <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.5)', zIndex:9998}} onClick={() => store.setContextMenu(null)} />}
-          <div style={{position: 'fixed', top: isMobile ? '50%' : store.contextMenu.y, left: isMobile ? '50%' : store.contextMenu.x, transform: isMobile ? 'translate(-50%, -50%)' : 'none', background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: isMobile ? '90vw' : 'max-content', maxWidth: '320px', maxHeight: isMobile ? '80vh' : 'auto', overflowY: isMobile ? 'auto' : 'visible'}}>
+          <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.2)', zIndex:9998}} onClick={() => store.setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); store.setContextMenu(null); }} />
+          <div style={{position: 'fixed', top: store.contextMenu.y, left: store.contextMenu.x, background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: 'max-content', maxWidth: '320px', maxHeight: '80vh', overflowY: 'auto'}}>
             
             {store.selectedElements.length === 2 && store.selectedElements[0].exId === store.contextMenu.exId && (
               <div style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px dashed #444' }}>
@@ -1405,9 +1352,6 @@ export default function App() {
               <div key={i} style={{ marginBottom: i < store.contextMenu!.items.length-1 ? '15px' : '0' }}>
                 <div style={{fontSize: '0.9em', color: '#fff', fontWeight: 'bold', marginBottom: '8px', textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>{it.label}</div>
                 <div style={{ display: 'flex', gap: '6px', flexWrap:'wrap' }}>
-                  <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                       onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
-                       onClick={() => { store.setIsolatedElement({exId: store.contextMenu!.exId, id: it.id}); store.setContextMenu(null); }}>✎ Aislar</div>
                   
                   {!isSys && (
                     <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s'}}
@@ -1480,6 +1424,54 @@ export default function App() {
             )})}
           </div>
         </>
+      )}
+
+      {/* MODAL DEL AUTOCORRECTOR GEMINI 2.5 */}
+      {store.evaluation.isOpen && (
+          <div className="no-print" style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.85)', zIndex:10000, display:'flex', justifyContent:'center', alignItems:'center', padding:'20px', boxSizing:'border-box'}}>
+              <div style={{background:'#1e1e2f', padding:'24px', borderRadius:'10px', width:'100%', maxWidth:'750px', border:'2px solid #a855f7', display:'flex', flexDirection:'column', gap:'20px', maxHeight:'90vh', boxShadow:'0 10px 40px rgba(0,0,0,0.8)'}}>
+                  
+                  <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                      <h3 style={{color:'#d8b4fe', margin:0, fontSize:'20px', display:'flex', alignItems:'center', gap:'10px'}}>✨ Motor de Corrección IA <span style={{fontSize:'12px', background:'#a855f7', color:'#fff', padding:'2px 8px', borderRadius:'12px'}}>Gemini 2.5</span></h3>
+                      <button onClick={()=>store.setEvaluation({isOpen: false})} style={{background:'none', border:'none', color:'white', fontSize:'24px', cursor:'pointer', padding:0}}>✕</button>
+                  </div>
+                  
+                  {!store.geminiKey && (
+                      <div style={{background:'#2d2d3a', padding:'15px', borderRadius:'6px', borderLeft:'4px solid #00d2ff'}}>
+                          <label style={{color:'#00d2ff', display:'block', marginBottom:'8px'}}>Clave API de Google Gemini (se guarda localmente):</label>
+                          <input type="password" placeholder="AIzaSy..." onChange={e => store.setGeminiKey(e.target.value)} style={{width:'100%', padding:'10px', boxSizing:'border-box', background:'#1c1c24', color:'white', border:'1px solid #444', borderRadius:'4px'}} />
+                          <p style={{fontSize:'12px', color:'#94a3b8', margin:'8px 0 0 0'}}>* Solo necesitas introducirla una vez. Tus credenciales nunca salen de tu navegador.</p>
+                      </div>
+                  )}
+
+                  <div style={{display:'flex', gap:'20px', flex:1, overflow:'hidden', flexDirection: isMobile ? 'column' : 'row'}}>
+                      
+                      {/* PREVISUALIZACIÓN DEL EJERCICIO */}
+                      <div style={{flex: 1, background:'#0c0c0e', borderRadius:'6px', padding:'10px', border:'1px solid #444', display:'flex', justifyContent:'center', alignItems:'center'}}>
+                          <img src={store.evaluation.img} style={{maxWidth:'100%', maxHeight: isMobile ? '150px' : '300px', objectFit:'contain', background:'white'}} alt="Captura del ejercicio" />
+                      </div>
+                      
+                      {/* PANEL DE RESULTADOS */}
+                      <div style={{flex: 1.5, background:'#2d2d3a', padding:'20px', borderRadius:'6px', overflowY:'auto', color:'#e2e8f0', fontSize:'15px', lineHeight:'1.6', border:'1px solid #444'}}>
+                          {store.evaluation.loading ? (
+                              <div style={{display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100%', color:'#d8b4fe', gap:'15px'}}>
+                                  <div style={{width:'40px', height:'40px', border:'4px solid #a855f7', borderTop:'4px solid transparent', borderRadius:'50%', animation:'spin 1s linear infinite'}}></div>
+                                  <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+                                  <span>Analizando coordenadas, trazas y resolución espacial...</span>
+                              </div>
+                          ) : (
+                              <div style={{whiteSpace:'pre-wrap', color: store.evaluation.result.includes('Error') ? '#ef4444' : '#e2e8f0'}}>{store.evaluation.result || 'Esperando inicio...'}</div>
+                          )}
+                      </div>
+                  </div>
+                  
+                  {store.geminiKey && !store.evaluation.loading && (
+                      <div style={{display:'flex', justifyContent:'flex-end'}}>
+                          <button className="btn-panel" onClick={() => store.evaluateWithGemini(store.exercises.find(e=>e.id === store.evaluation.exId)!, store.evaluation.img)} style={{background:'#a855f7', color:'white', padding:'12px 24px', fontSize:'15px'}}>↻ Generar Solución</button>
+                      </div>
+                  )}
+              </div>
+          </div>
       )}
     </>
   );
