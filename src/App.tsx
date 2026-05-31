@@ -616,6 +616,7 @@ function View2D({ ex }: { ex: Exercise }) {
   const [dim, setDim] = useState({ w: 800, h: 400 });
   const [contextMenu, setContextMenu] = useState<{x:number, y:number, items: any[]} | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const isMobile = window.innerWidth <= 768;
   const touchTimeout = useRef<any>(null);
 
   useLayoutEffect(() => {
@@ -834,19 +835,9 @@ function View2D({ ex }: { ex: Exercise }) {
            else if (e.evt.changedTouches && e.evt.changedTouches.length > 0) { cX = e.evt.changedTouches[0].clientX; cY = e.evt.changedTouches[0].clientY; }
        }
        
-       const sheet = document.querySelector('.sheet-container');
-       if (sheet) {
-           const rect = sheet.getBoundingClientRect();
-           const scale = (store.sheetZoom || 100) / 100;
-           const menuW = 260; const menuH = 350;
-           
-           let finalCX = cX; let finalCY = cY;
-           if (finalCX + menuW > window.innerWidth) finalCX = window.innerWidth - menuW;
-           if (finalCY + menuH > window.innerHeight) finalCY = window.innerHeight - menuH;
-           
-           cX = (finalCX - rect.left) / scale;
-           cY = (finalCY - rect.top) / scale;
-       }
+       const menuW = 260; const menuH = 350;
+       if (cX + menuW > window.innerWidth) cX = window.innerWidth - menuW;
+       if (cY + menuH > window.innerHeight) cY = window.innerHeight - menuH;
 
        setContextMenu({ x: cX, y: cY, items: Array.from(uniqueMap.values()) });
      } else setContextMenu(null);
@@ -947,109 +938,111 @@ function View2D({ ex }: { ex: Exercise }) {
       </div>
 
       {contextMenu && (
-        <div style={{position: 'absolute', top: contextMenu.y, left: contextMenu.x, background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: 'max-content', maxWidth: '320px', maxHeight: '80vh', overflowY: 'auto'}}>
-          
-          {store.selectedElements.length === 2 && store.selectedElements[0].exId === ex.id && (
-            <div style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px dashed #444' }}>
-              <div style={{fontSize: '0.85em', color: '#ff9f43', fontWeight: 'bold', marginBottom: '8px', textTransform:'uppercase'}}>Vincular Selección:</div>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                <button style={{flex: 1, padding: '8px', cursor: 'pointer', color: '#000', background: '#ff9f43', border: 'none', borderRadius: '4px', fontWeight: 'bold'}} onClick={() => { store.applyConstraint('parallel'); setContextMenu(null); }}>║ Paralelos</button>
-                <button style={{flex: 1, padding: '8px', cursor: 'pointer', color: '#000', background: '#ff9f43', border: 'none', borderRadius: '4px', fontWeight: 'bold'}} onClick={() => { store.applyConstraint('perpendicular'); setContextMenu(null); }}>⟂ Perpendiculares</button>
-              </div>
-            </div>
-          )}
-
-          <div style={{fontSize: '0.75em', color: '#00d2ff', paddingBottom: '6px', borderBottom: '1px solid #3a3a44', marginBottom: '10px', textTransform:'uppercase', letterSpacing:'1px', fontWeight:'bold'}}>Editar Elemento:</div>
-          
-          {contextMenu.items.map((it, i) => {
-            const isSys = it.id.startsWith('sys_');
-            const isLineOrPlane = it.id.startsWith('seg') || it.id.startsWith('pl');
+        <>
+          <div style={{position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: 'max-content', maxWidth: '320px', maxHeight: '80vh', overflowY: 'auto'}}>
             
-            let rId = it.id; if (rId.includes('_')) rId = rId.split('_')[1];
-            if (it.id.startsWith('pt_')) {
-                let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
-                if(thePt) rId = thePt.id;
-            }
-            const hasConstraint = store.constraints.some(c => c.elem1Id === rId || c.elem2Id === rId);
+            {store.selectedElements.length === 2 && store.selectedElements[0].exId === ex.id && (
+              <div style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px dashed #444' }}>
+                <div style={{fontSize: '0.85em', color: '#ff9f43', fontWeight: 'bold', marginBottom: '8px', textTransform:'uppercase'}}>Vincular Selección:</div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  <button style={{flex: 1, padding: '8px', cursor: 'pointer', color: '#000', background: '#ff9f43', border: 'none', borderRadius: '4px', fontWeight: 'bold'}} onClick={() => { store.applyConstraint('parallel'); setContextMenu(null); }}>║ Paralelos</button>
+                  <button style={{flex: 1, padding: '8px', cursor: 'pointer', color: '#000', background: '#ff9f43', border: 'none', borderRadius: '4px', fontWeight: 'bold'}} onClick={() => { store.applyConstraint('perpendicular'); setContextMenu(null); }}>⟂ Perpendiculares</button>
+                </div>
+              </div>
+            )}
 
-            return (
-            <div key={i} style={{ marginBottom: i < contextMenu.items.length-1 ? '15px' : '0' }}>
-              <div style={{fontSize: '0.9em', color: '#fff', fontWeight: 'bold', marginBottom: '8px', textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>{it.label}</div>
-              <div style={{ display: 'flex', gap: '6px', flexWrap:'wrap' }}>
-                <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                     onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
-                     onClick={() => { setSelectedId(it.id); setContextMenu(null); }}>✎ Aislar</div>
-                
-                {!isSys && (
-                  <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s'}}
-                       onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
-                       onClick={() => {
-                          let type: 'punto' | 'recta' | 'plano' = it.type;
-                          let oldName = it.label.replace(/(Punto |Recta |Plano )/g, '');
-                          let newName = prompt("Introduce el nuevo nombre (déjalo en blanco para ocultarlo):", oldName);
-                          if (newName !== null) store.updateName(ex.id, type, rId, newName);
-                          setContextMenu(null);
-                       }}>✏️ Nombre</div>
-                )}
+            <div style={{fontSize: '0.75em', color: '#00d2ff', paddingBottom: '6px', borderBottom: '1px solid #3a3a44', marginBottom: '10px', textTransform:'uppercase', letterSpacing:'1px', fontWeight:'bold'}}>Editar Elemento:</div>
+            
+            {contextMenu.items.map((it, i) => {
+              const isSys = it.id.startsWith('sys_');
+              const isLineOrPlane = it.id.startsWith('seg') || it.id.startsWith('pl');
+              
+              let rId = it.id; if (rId.includes('_')) rId = rId.split('_')[1];
+              if (it.id.startsWith('pt_')) {
+                  let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
+                  if(thePt) rId = thePt.id;
+              }
+              const hasConstraint = store.constraints.some(c => c.elem1Id === rId || c.elem2Id === rId);
 
-                {!isSys && isLineOrPlane && (
-                   <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                        onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
-                        onClick={() => {
-                           let type: 'recta' | 'plano' = it.id.startsWith('pl') ? 'plano' : 'recta';
-                           store.toggleLineStyle(ex.id, type, rId);
-                           setContextMenu(null);
-                        }}>🔄 Línea</div>
-                )}
-
-                {!isSys && (
-                   <label style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#10b981', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s', position:'relative', overflow:'hidden'}}
-                        onMouseEnter={e => e.currentTarget.style.background = '#34d399'} onMouseLeave={e => e.currentTarget.style.background = '#10b981'} title="Cambiar Color">
-                      🎨 Color
-                      <input type="color" defaultValue="#000000" style={{position:'absolute', opacity:0, top:0, left:0, width:'100%', height:'100%', cursor:'pointer'}}
-                             onChange={(e) => { let type: 'punto' | 'recta' | 'plano' = it.type; store.updateColor(ex.id, type, rId, e.target.value); }} />
-                   </label>
-                )}
-                
-                {!isSys && (
+              return (
+              <div key={i} style={{ marginBottom: i < contextMenu.items.length-1 ? '15px' : '0' }}>
+                <div style={{fontSize: '0.9em', color: '#fff', fontWeight: 'bold', marginBottom: '8px', textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>{it.label}</div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap:'wrap' }}>
                   <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                       onMouseEnter={e => { e.currentTarget.style.background = '#475569'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; }}
-                       onClick={() => {
-                          let type: 'punto' | 'recta' | 'plano' = it.type;
-                          store.updateName(ex.id, type, rId, "");
-                          setContextMenu(null);
-                       }}>🆑 Ocultar</div>
-                )}
+                       onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
+                       onClick={() => { setSelectedId(it.id); setContextMenu(null); }}>✎ Aislar</div>
+                  
+                  {!isSys && (
+                    <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s'}}
+                         onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
+                         onClick={() => {
+                            let type: 'punto' | 'recta' | 'plano' = it.type;
+                            let oldName = it.label.replace(/(Punto |Recta |Plano )/g, '');
+                            let newName = prompt("Introduce el nuevo nombre (déjalo en blanco para ocultarlo):", oldName);
+                            if (newName !== null) store.updateName(ex.id, type, rId, newName);
+                            setContextMenu(null);
+                         }}>✏️ Nombre</div>
+                  )}
 
-                {!isSys && (
-                  <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#ef4444', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                       onMouseEnter={e => e.currentTarget.style.background = '#f87171'} onMouseLeave={e => e.currentTarget.style.background = '#ef4444'}
-                       onClick={() => {
-                          let type: 'punto' | 'recta' | 'plano' = it.type;
-                          store.removeElement(ex.id, type, rId);
-                          setContextMenu(null);
-                       }}>🗑️ Eliminar</div>
-                )}
+                  {!isSys && isLineOrPlane && (
+                     <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
+                          onClick={() => {
+                             let type: 'recta' | 'plano' = it.id.startsWith('pl') ? 'plano' : 'recta';
+                             store.toggleLineStyle(ex.id, type, rId);
+                             setContextMenu(null);
+                          }}>🔄 Línea</div>
+                  )}
 
-                {!isSys && hasConstraint && (
-                  <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#8b5cf6', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                       onMouseEnter={e => e.currentTarget.style.background = '#a78bfa'} onMouseLeave={e => e.currentTarget.style.background = '#8b5cf6'}
-                       onClick={() => {
-                          store.removeConstraintsFor(rId);
-                          setContextMenu(null);
-                       }}>🔗 Desvincular</div>
+                  {!isSys && (
+                     <label style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#10b981', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s', position:'relative', overflow:'hidden'}}
+                          onMouseEnter={e => e.currentTarget.style.background = '#34d399'} onMouseLeave={e => e.currentTarget.style.background = '#10b981'} title="Cambiar Color">
+                        🎨 Color
+                        <input type="color" defaultValue="#000000" style={{position:'absolute', opacity:0, top:0, left:0, width:'100%', height:'100%', cursor:'pointer'}}
+                               onChange={(e) => { let type: 'punto' | 'recta' | 'plano' = it.type; store.updateColor(ex.id, type, rId, e.target.value); }} />
+                     </label>
+                  )}
+                  
+                  {!isSys && (
+                    <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
+                         onMouseEnter={e => { e.currentTarget.style.background = '#475569'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; }}
+                         onClick={() => {
+                            let type: 'punto' | 'recta' | 'plano' = it.type;
+                            store.updateName(ex.id, type, rId, "");
+                            setContextMenu(null);
+                         }}>🆑 Ocultar</div>
+                  )}
+
+                  {!isSys && (
+                    <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#ef4444', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
+                         onMouseEnter={e => e.currentTarget.style.background = '#f87171'} onMouseLeave={e => e.currentTarget.style.background = '#ef4444'}
+                         onClick={() => {
+                            let type: 'punto' | 'recta' | 'plano' = it.type;
+                            store.removeElement(ex.id, type, rId);
+                            setContextMenu(null);
+                         }}>🗑️ Eliminar</div>
+                  )}
+
+                  {!isSys && hasConstraint && (
+                    <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#8b5cf6', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
+                         onMouseEnter={e => e.currentTarget.style.background = '#a78bfa'} onMouseLeave={e => e.currentTarget.style.background = '#8b5cf6'}
+                         onClick={() => {
+                            store.removeConstraintsFor(rId);
+                            setContextMenu(null);
+                         }}>🔗 Desvincular</div>
+                  )}
+                </div>
+                {it.id?.startsWith('pl') && (
+                   <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', marginTop: '6px', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign: 'center', transition:'all 0.2s'}}
+                        onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
+                        onClick={() => { store.togglePlaneType(ex.id, rId); setContextMenu(null); }}>
+                       ⮂ Alternar Plano Paralelo a LT
+                   </div>
                 )}
               </div>
-              {it.id?.startsWith('pl') && (
-                 <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', marginTop: '6px', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign: 'center', transition:'all 0.2s'}}
-                      onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
-                      onClick={() => { store.togglePlaneType(ex.id, rId); setContextMenu(null); }}>
-                     ⮂ Alternar Plano Paralelo a LT
-                 </div>
-              )}
-            </div>
-          )})}
-        </div>
+            )})}
+          </div>
+        </>
       )}
     </div>
   );
