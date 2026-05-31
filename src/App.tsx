@@ -117,15 +117,16 @@ function enforceConstraintPair(ex: Exercise, c: Constraint, structuralChangeOnId
   }
 }
 
+// PROTECCIÓN: Carga inicial unificada
 let initialExercises: Exercise[] = [];
 try {
-  const savedData = localStorage.getItem('diedrico_autosave');
+  const savedData = localStorage.getItem('diedrico_app_data');
   if (savedData) {
     const parsed = JSON.parse(savedData);
     if (Array.isArray(parsed) && parsed.every(ex => ex && ex.state)) initialExercises = parsed;
-    else localStorage.removeItem('diedrico_autosave');
+    else localStorage.removeItem('diedrico_app_data');
   }
-} catch (e) { localStorage.removeItem('diedrico_autosave'); }
+} catch (e) { localStorage.removeItem('diedrico_app_data'); }
 
 export const useStore = create<CadStore>()((set, get) => ({
   exercises: initialExercises,
@@ -240,14 +241,14 @@ export const useStore = create<CadStore>()((set, get) => ({
     get().commitHistory();
   },
 
-  saveData: () => { localStorage.setItem('diedrico_pro_data', JSON.stringify(get().exercises)); alert("Lámina guardada."); },
+  saveData: () => { localStorage.setItem('diedrico_app_data', JSON.stringify(get().exercises)); alert("Lámina guardada correctamente en este navegador."); },
   loadData: () => { 
-    const d = localStorage.getItem('diedrico_pro_data'); 
-    if (d) { set({ exercises: JSON.parse(d) }); get().commitHistory(); } else alert("No hay datos guardados."); 
+    const d = localStorage.getItem('diedrico_app_data'); 
+    if (d) { set({ exercises: JSON.parse(d) }); get().commitHistory(); alert("Datos cargados correctamente."); } else alert("No hay datos guardados localmente."); 
   },
   importData: (newExs) => {
     set({ exercises: newExs, history: [newExs], historyIndex: 0, selectedElements: [], constraints: [], contextMenu: null });
-    localStorage.setItem('diedrico_autosave', JSON.stringify(newExs));
+    localStorage.setItem('diedrico_app_data', JSON.stringify(newExs));
   },
   downloadData: () => { 
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(get().exercises));
@@ -770,10 +771,9 @@ function View2D({ ex }: { ex: Exercise }) {
     ctx.setLineDash([]);
     
     (pts || []).forEach((p: any) => {
-      const isSel = store.selectedElements.some(s => s.id === p.id);
-      const c = isSel ? "#ff9f43" : (p.color || "black");
+      const c = p.color || "black";
       p.nodes.forEach((n: ExNode) => { 
-        ctx.beginPath(); ctx.strokeStyle = c; ctx.lineWidth = isSel ? sc(3) : sc(1.5);
+        ctx.beginPath(); ctx.strokeStyle = c; ctx.lineWidth = sc(1.5);
         let cs = sc(5); ctx.moveTo(n.x, n.y - cs); ctx.lineTo(n.x, n.y + cs); ctx.moveTo(n.x - cs, n.y); ctx.lineTo(n.x + cs, n.y); ctx.stroke();
         if (p.name) queueLabel(`${p.name}${n.t}`, n.x + sc(8), n.y - sc(8), undefined, c); 
       });
@@ -1322,7 +1322,7 @@ export default function App() {
       {/* MENÚ CONTEXTUAL (FLOTANTE EN COORDENADAS EXACTAS) */}
       {store.contextMenu && (
         <>
-          <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.2)', zIndex:9998}} onClick={() => store.setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); store.setContextMenu(null); }} />
+          <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'transparent', zIndex:9998}} onClick={() => store.setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); store.setContextMenu(null); }} />
           <div style={{position: 'fixed', top: store.contextMenu.y, left: store.contextMenu.x, background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: 'max-content', maxWidth: '320px', maxHeight: '80vh', overflowY: 'auto'}}>
             
             {store.selectedElements.length === 2 && store.selectedElements[0].exId === store.contextMenu.exId && (
