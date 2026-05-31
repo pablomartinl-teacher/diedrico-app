@@ -830,7 +830,10 @@ function View2D({ ex }: { ex: Exercise }) {
        });
        
        let cX = e.evt.clientX; let cY = e.evt.clientY;
-       if (isTouch && e.evt.touches && e.evt.touches.length > 0) { cX = e.evt.touches[0].clientX; cY = e.evt.touches[0].clientY; }
+       if (isTouch) {
+           if (e.evt.touches && e.evt.touches.length > 0) { cX = e.evt.touches[0].clientX; cY = e.evt.touches[0].clientY; }
+           else if (e.evt.changedTouches && e.evt.changedTouches.length > 0) { cX = e.evt.changedTouches[0].clientX; cY = e.evt.changedTouches[0].clientY; }
+       }
        
        setContextMenu({ x: cX, y: cY, items: Array.from(uniqueMap.values()) });
      } else setContextMenu(null);
