@@ -44,6 +44,7 @@ interface CadStore {
   clearSelection: () => void;
   applyConstraint: (type: 'parallel' | 'perpendicular') => void;
   removeConstraintsFor: (id: string) => void;
+  removeConstraint: (id: string) => void;
   updateNode: (exId: string, ptId: string, nodeId: string, newX: number, newY: number) => void;
   updatePlane: (exId: string, planeId: string, newVX: number) => void;
   updatePlaneEndpoint: (exId: string, planeId: string, traceNum: 1|2, newX: number, newY: number) => void;
@@ -233,6 +234,11 @@ export const useStore = create<CadStore>()((set, get) => ({
 
   removeConstraintsFor: (id) => {
     set(st => ({ constraints: st.constraints.filter(c => c.elem1Id !== id && c.elem2Id !== id) }));
+    get().commitHistory();
+  },
+  
+  removeConstraint: (id) => {
+    set(st => ({ constraints: st.constraints.filter(c => c.id !== id) }));
     get().commitHistory();
   },
 
@@ -614,10 +620,6 @@ function View2D({ ex }: { ex: Exercise }) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dim, setDim] = useState({ w: 800, h: 400 });
-  const [contextMenu, setContextMenu] = useState<{x:number, y:number, items: any[]} | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const isMobile = window.innerWidth <= 768;
-  const touchTimeout = useRef<any>(null);
 
   useLayoutEffect(() => {
     if (!containerRef.current) return;
@@ -632,7 +634,7 @@ function View2D({ ex }: { ex: Exercise }) {
   const sc = (val: number) => val / scale;
   const getFont = (size: number, weight = "") => `${weight} ${sc(size)}px Arial`.trim();
 
-  const handleHover = (e: any) => { e.target.moveToTop(); e.target.scale({x:1.5, y:1.5}); document.body.style.cursor='pointer'; };
+  const handleHover = (e: any) => { if(store.activeTool==='pointer') { e.target.moveToTop(); e.target.scale({x:1.3, y:1.3}); document.body.style.cursor='pointer'; } };
   const handleOut = (e: any) => { e.target.scale({x:1, y:1}); document.body.style.cursor='default'; };
   const handleHoverLine = () => { document.body.style.cursor='pointer'; };
   const handleOutLine = () => { document.body.style.cursor='default'; };
@@ -812,52 +814,31 @@ function View2D({ ex }: { ex: Exercise }) {
 
   const b = ex.state?.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
 
-  const handleContextMenuLogic = (e: any, isTouch = false) => {
-     if(!isTouch) e.evt.preventDefault();
-     const stage = e.target.getStage(); const pos = stage?.getPointerPosition();
-     if (!stage || !pos) return;
-     const shapes = stage.getAllIntersections(pos);
-     const handleShapes = shapes.filter((s:any) => (s.getClassName() === 'Circle' || s.getClassName() === 'Line') && s.attrs.name && s.attrs.id);
-     if (handleShapes.length > 0) {
-       const uniqueMap = new Map();
-       handleShapes.forEach((s:any) => {
-         let rId = s.attrs.id; if (rId.includes('_')) rId = rId.split('_')[1];
-         let label = s.attrs.name;
-         if (label.includes('Extremo') || label.includes('Recta')) label = 'Recta ' + label.replace(/Extremo |Recta | \(.*/g, '').replace(/[12]/g, '');
-         else if (label.includes('Traza') || label.includes('Plano')) label = 'Plano ' + label.replace(/Traza |Plano | Horizontal | Frontal | Oblicuo /g, '').replace(/[12]/g, '');
-         else if (label.includes('Punto')) label = 'Punto ' + label.replace(/Punto /, '').replace(/[12]/g, '');
-         if (!uniqueMap.has(rId)) uniqueMap.set(rId, { label: label.trim(), id: s.attrs.id, type: s.attrs.name.includes('Punto') ? 'punto' : s.attrs.name.includes('Plano') || s.attrs.name.includes('Traza') ? 'plano' : 'recta' });
-       });
-       
-       let cX = e.evt.clientX; let cY = e.evt.clientY;
-       if (isTouch) {
-           if (e.evt.touches && e.evt.touches.length > 0) { cX = e.evt.touches[0].clientX; cY = e.evt.touches[0].clientY; }
-           else if (e.evt.changedTouches && e.evt.changedTouches.length > 0) { cX = e.evt.changedTouches[0].clientX; cY = e.evt.changedTouches[0].clientY; }
-       }
-       
-       setContextMenu({ x: cX, y: cY, items: Array.from(uniqueMap.values()) });
-     } else setContextMenu(null);
-  };
-
   return (
     <div id={`stage-${ex.id}`} style={{width: '100%', height: '100%', position: 'relative', overflow: 'hidden'}}>
       <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
-        <Stage width={dim.w || 800} height={dim.h || 400} 
-               onDragEnd={() => { setSelectedId(null); store.commitHistory(); }}
+        <Stage width={dim.w || 800} height={dim.h || 400} draggable={store.activeTool === 'pan'}
+               onDragEnd={() => { store.commitHistory(); }}
                onClick={(e)=>{
-                 if(e.evt.button===0) { setContextMenu(null); if (e.target === e.target.getStage()) { setSelectedId(null); store.clearSelection(); } }
-               }}
-               onTap={(e)=>{
-                 if(e.target === e.target.getStage()) { setContextMenu(null); setSelectedId(null); store.clearSelection(); }
-               }}
-               onContextMenu={(e)=> handleContextMenuLogic(e, false)}
-               onTouchStart={(e)=>{
-                 if(e.evt.touches && e.evt.touches.length === 1) {
-                   touchTimeout.current = setTimeout(() => { handleContextMenuLogic(e, true); }, 500);
+                 if(e.evt.button===0 && store.activeTool === 'pointer') { 
+                   const pos = e.target.getStage()?.getPointerPosition();
+                   if(pos) {
+                       const shapes = e.target.getStage()!.getAllIntersections(pos);
+                       const handleShapes = shapes.filter((s:any) => (s.getClassName() === 'Circle' || s.getClassName() === 'Line') && s.attrs.name && s.attrs.id);
+                       if(handleShapes.length === 0) { store.clearSelection(); }
+                   }
                  }
                }}
-               onTouchMove={()=>{ if(touchTimeout.current) clearTimeout(touchTimeout.current); }}
-               onTouchEnd={()=>{ if(touchTimeout.current) clearTimeout(touchTimeout.current); }}
+               onTap={(e)=>{
+                 if(store.activeTool === 'pointer') {
+                     const pos = e.target.getStage()?.getPointerPosition();
+                     if(pos) {
+                         const shapes = e.target.getStage()!.getAllIntersections(pos);
+                         const handleShapes = shapes.filter((s:any) => (s.getClassName() === 'Circle' || s.getClassName() === 'Line') && s.attrs.name && s.attrs.id);
+                         if(handleShapes.length === 0) { store.clearSelection(); }
+                     }
+                 }
+               }}
                >
           <Layer scaleX={scale} scaleY={scale} x={offsetX} y={offsetY}>
             <Shape sceneFunc={drawScene} />
@@ -865,13 +846,13 @@ function View2D({ ex }: { ex: Exercise }) {
             <Group visible={!store.isPrinting}>
               {(segments || []).map(seg => (
                 <Line key={`hit_seg_${seg.id}`} id={`segHit_${seg.id}`} name={`Recta ${seg.label}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} 
-                      onClick={(e)=>{ if(e.evt.button === 0) { e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); setContextMenu(null); } }}
-                      onTap={(e)=>{ e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); setContextMenu(null); }} />
+                      onClick={(e)=>{ if(e.evt.button === 0 && store.activeTool === 'pointer') { e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); } }}
+                      onTap={(e)=>{ if(store.activeTool === 'pointer') { e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); } }} />
               ))}
               {(planes || []).map(pl => {
                 const hitProps = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, 
-                  onClick: (e:any) => { if(e.evt.button===0) { e.cancelBubble=true; store.selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); setContextMenu(null); } },
-                  onTap: (e:any) => { e.cancelBubble=true; store.selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); setContextMenu(null); }
+                  onClick: (e:any) => { if(e.evt.button===0 && store.activeTool === 'pointer') { e.cancelBubble=true; store.selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); } },
+                  onTap: (e:any) => { if(store.activeTool === 'pointer') { e.cancelBubble=true; store.selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); } }
                 };
                 if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} id={`plHit_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} />;
                 if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} id={`plHit_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} />;
@@ -884,162 +865,54 @@ function View2D({ ex }: { ex: Exercise }) {
                 );
               })}
 
-              <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt1"} stroke={selectedId === "sys_lt1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt1" ? sc(3) : sc(25)} />
-              <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_lt2"} stroke={selectedId === "sys_lt2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_lt2" ? sc(3) : sc(25)} />
+              <Circle id="sys_lt1" name="Extremo Izq LT" x={b.ltX1} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'lt1', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
+              <Circle id="sys_lt2" name="Extremo Der LT" x={b.ltX2} y={ltY} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'lt2', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
 
-              {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={sc(18)} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => store.updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_origin"} stroke={selectedId === "sys_origin" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_origin" ? sc(3) : sc(25)} />}
+              {reqOrigin && <Circle id="sys_origin" name="Origen (0)" x={originX} y={ltY} radius={sc(18)} fill="rgba(255,200,0,0.4)" draggable onDragMove={(e) => store.updateSystem(ex.id, 'origin', e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />}
               
               {reqRegla && (
                 <React.Fragment>
-                  <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o1"} stroke={selectedId === "sys_o1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o1" ? sc(3) : sc(25)} />
-                  <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_o2"} stroke={selectedId === "sys_o2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_o2" ? sc(3) : sc(25)} />
+                  <Circle id="sys_o1" name="Extremo Sup Eje" x={originX} y={b.oY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'o1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
+                  <Circle id="sys_o2" name="Extremo Inf Eje" x={originX} y={b.oY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:originX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'o2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
                 </React.Fragment>
               )}
 
               {reqPP && (
                 <React.Fragment>
-                  <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={sc(12)} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_pp"} stroke={selectedId === "sys_pp" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_pp" ? sc(3) : sc(25)} />
-                  <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p1"} stroke={selectedId === "sys_p1" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p1" ? sc(3) : sc(25)} />
-                  <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === "sys_p2"} stroke={selectedId === "sys_p2" ? "#fff" : "transparent"} strokeWidth={selectedId === "sys_p2" ? sc(3) : sc(25)} />
+                  <Circle id="sys_pp" name="Plano de Perfil" x={ppX} y={ltY} radius={sc(12)} fill="rgba(200,100,200,0.3)" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY})} onDragMove={(e) => store.updateSystem(ex.id, 'pp', e.target.x(), 0)} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
+                  <Circle id="sys_p1" name="Extremo Sup PP" x={ppX} y={b.pY1} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'p1', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
+                  <Circle id="sys_p2" name="Extremo Inf PP" x={ppX} y={b.pY2} radius={sc(8)} fill="rgba(0,0,0,0.2)" draggable dragBoundFunc={(p)=>({x:ppX, y:p.y})} onDragMove={(e) => store.updateSystem(ex.id, 'p2', 0, e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
                 </React.Fragment>
               )}
 
               {planes.map(pl => {
-                if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />;
-                if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />;
-                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} /></React.Fragment>;
+                if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />;
+                if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />;
+                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} /></React.Fragment>;
                 return (
                   <React.Fragment key={pl.id}>
-                    <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => store.updatePlane(ex.id, pl.id, e.target.x())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl_${pl.id}`} stroke={selectedId === `pl_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl_${pl.id}` ? sc(3) : sc(25)} />
-                    <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />
-                    <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />
+                    <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => store.updatePlane(ex.id, pl.id, e.target.x())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
+                    <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
+                    <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
                   </React.Fragment>
                 );
               })}
 
               {segments.map(seg => (
                 <React.Fragment key={seg.id}>
-                  <Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg1_${seg.id}`} stroke={selectedId === `seg1_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg1_${seg.id}` ? sc(3) : sc(25)} />
-                  <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg2_${seg.id}`} stroke={selectedId === `seg2_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg2_${seg.id}` ? sc(3) : sc(25)} />
+                  <Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
+                  <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} />
                 </React.Fragment>
               ))}
               {pts.map(p => p.nodes.map(n => (
-                <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => store.updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'punto', p.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pt_${n.id}`} stroke={selectedId === `pt_${n.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pt_${n.id}` ? sc(3) : sc(25)} 
-                        onClick={(e) => { if(e.evt.button === 0) { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); setContextMenu(null); } }}
-                        onTap={(e) => { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); setContextMenu(null); }} />
+                <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => store.updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} stroke="transparent" strokeWidth={sc(25)} 
+                        onClick={(e) => { if(e.evt.button === 0 && store.activeTool === 'pointer') { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); } }}
+                        onTap={(e) => { if(store.activeTool === 'pointer') { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); } }} />
               )))}
             </Group>
           </Layer>
         </Stage>
       </div>
-
-      {contextMenu && (
-        <>
-          <div style={{position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: 'max-content', maxWidth: '320px', maxHeight: '80vh', overflowY: 'auto'}}>
-            
-            {store.selectedElements.length === 2 && store.selectedElements[0].exId === ex.id && (
-              <div style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px dashed #444' }}>
-                <div style={{fontSize: '0.85em', color: '#ff9f43', fontWeight: 'bold', marginBottom: '8px', textTransform:'uppercase'}}>Vincular Selección:</div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button style={{flex: 1, padding: '8px', cursor: 'pointer', color: '#000', background: '#ff9f43', border: 'none', borderRadius: '4px', fontWeight: 'bold'}} onClick={() => { store.applyConstraint('parallel'); setContextMenu(null); }}>║ Paralelos</button>
-                  <button style={{flex: 1, padding: '8px', cursor: 'pointer', color: '#000', background: '#ff9f43', border: 'none', borderRadius: '4px', fontWeight: 'bold'}} onClick={() => { store.applyConstraint('perpendicular'); setContextMenu(null); }}>⟂ Perpendiculares</button>
-                </div>
-              </div>
-            )}
-
-            <div style={{fontSize: '0.75em', color: '#00d2ff', paddingBottom: '6px', borderBottom: '1px solid #3a3a44', marginBottom: '10px', textTransform:'uppercase', letterSpacing:'1px', fontWeight:'bold'}}>Editar Elemento:</div>
-            
-            {contextMenu.items.map((it, i) => {
-              const isSys = it.id.startsWith('sys_');
-              const isLineOrPlane = it.id.startsWith('seg') || it.id.startsWith('pl');
-              
-              let rId = it.id; if (rId.includes('_')) rId = rId.split('_')[1];
-              if (it.id.startsWith('pt_')) {
-                  let thePt = ex.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
-                  if(thePt) rId = thePt.id;
-              }
-              const hasConstraint = store.constraints.some(c => c.elem1Id === rId || c.elem2Id === rId);
-
-              return (
-              <div key={i} style={{ marginBottom: i < contextMenu.items.length-1 ? '15px' : '0' }}>
-                <div style={{fontSize: '0.9em', color: '#fff', fontWeight: 'bold', marginBottom: '8px', textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>{it.label}</div>
-                <div style={{ display: 'flex', gap: '6px', flexWrap:'wrap' }}>
-                  <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                       onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
-                       onClick={() => { setSelectedId(it.id); setContextMenu(null); }}>✎ Aislar</div>
-                  
-                  {!isSys && (
-                    <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s'}}
-                         onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
-                         onClick={() => {
-                            let type: 'punto' | 'recta' | 'plano' = it.type;
-                            let oldName = it.label.replace(/(Punto |Recta |Plano )/g, '');
-                            let newName = prompt("Introduce el nuevo nombre (déjalo en blanco para ocultarlo):", oldName);
-                            if (newName !== null) store.updateName(ex.id, type, rId, newName);
-                            setContextMenu(null);
-                         }}>✏️ Nombre</div>
-                  )}
-
-                  {!isSys && isLineOrPlane && (
-                     <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                          onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
-                          onClick={() => {
-                             let type: 'recta' | 'plano' = it.id.startsWith('pl') ? 'plano' : 'recta';
-                             store.toggleLineStyle(ex.id, type, rId);
-                             setContextMenu(null);
-                          }}>🔄 Línea</div>
-                  )}
-
-                  {!isSys && (
-                     <label style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#10b981', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s', position:'relative', overflow:'hidden'}}
-                          onMouseEnter={e => e.currentTarget.style.background = '#34d399'} onMouseLeave={e => e.currentTarget.style.background = '#10b981'} title="Cambiar Color">
-                        🎨 Color
-                        <input type="color" defaultValue="#000000" style={{position:'absolute', opacity:0, top:0, left:0, width:'100%', height:'100%', cursor:'pointer'}}
-                               onChange={(e) => { let type: 'punto' | 'recta' | 'plano' = it.type; store.updateColor(ex.id, type, rId, e.target.value); }} />
-                     </label>
-                  )}
-                  
-                  {!isSys && (
-                    <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                         onMouseEnter={e => { e.currentTarget.style.background = '#475569'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; }}
-                         onClick={() => {
-                            let type: 'punto' | 'recta' | 'plano' = it.type;
-                            store.updateName(ex.id, type, rId, "");
-                            setContextMenu(null);
-                         }}>🆑 Ocultar</div>
-                  )}
-
-                  {!isSys && (
-                    <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#ef4444', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                         onMouseEnter={e => e.currentTarget.style.background = '#f87171'} onMouseLeave={e => e.currentTarget.style.background = '#ef4444'}
-                         onClick={() => {
-                            let type: 'punto' | 'recta' | 'plano' = it.type;
-                            store.removeElement(ex.id, type, rId);
-                            setContextMenu(null);
-                         }}>🗑️ Eliminar</div>
-                  )}
-
-                  {!isSys && hasConstraint && (
-                    <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#8b5cf6', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                         onMouseEnter={e => e.currentTarget.style.background = '#a78bfa'} onMouseLeave={e => e.currentTarget.style.background = '#8b5cf6'}
-                         onClick={() => {
-                            store.removeConstraintsFor(rId);
-                            setContextMenu(null);
-                         }}>🔗 Desvincular</div>
-                  )}
-                </div>
-                {it.id?.startsWith('pl') && (
-                   <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', marginTop: '6px', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign: 'center', transition:'all 0.2s'}}
-                        onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
-                        onClick={() => { store.togglePlaneType(ex.id, rId); setContextMenu(null); }}>
-                       ⮂ Alternar Plano Paralelo a LT
-                   </div>
-                )}
-              </div>
-            )})}
-          </div>
-        </>
-      )}
     </div>
   );
 }
@@ -1051,6 +924,7 @@ export default function App() {
   const store = useStore();
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   
   useLayoutEffect(() => {
       const handleResize = () => {
@@ -1061,6 +935,12 @@ export default function App() {
       window.addEventListener('resize', handleResize);
       return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  useEffect(() => {
+    if (isMobile && store.selectedElements.length > 0) {
+      setRightSidebarOpen(true);
+    }
+  }, [store.selectedElements.length, isMobile]);
 
   const [type, setType] = useState('punto_coord');
   const [ptCount, setPtCount] = useState(4);
@@ -1109,6 +989,7 @@ export default function App() {
         .app-layout { display: flex; height: 100vh; overflow: hidden; background-color: #0c0c0e; }
         
         .sidebar { width: 300px; background: #121216; border-right: 1px solid #1e1e24; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; flex-shrink: 0; z-index: 1000; box-shadow: 2px 0 15px rgba(0,0,0,0.6); }
+        .right-sidebar { width: 300px; background: #121216; border-left: 1px solid #1e1e24; padding: 20px; display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0; z-index: 1000; box-shadow: -2px 0 15px rgba(0,0,0,0.6); }
         
         .main-area { flex: 1; display: flex; flex-direction: column; height: 100vh; background: #18181c; background-image: radial-gradient(#2d2d36 1px, transparent 1px); background-size: 24px 24px; position: relative; }
         .top-navbar { position: absolute; top: 15px; left: 30px; display: flex; align-items: center; gap: 15px; z-index: 50; background: #121216; padding: 8px 15px; border-radius: 8px; border: 1px solid #1e1e24; box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
@@ -1135,9 +1016,12 @@ export default function App() {
         .side-handle-b { position: absolute; left: 0; right: 0; bottom: -5px; height: 15px; cursor: ns-resize; z-index: 15; background: rgba(0,0,0,0.01); transition: background 0.2s; touch-action: none; }
         .side-handle-b:hover, .side-handle-b:active { background: rgba(0, 210, 255, 0.4); }
         
-        .btn-panel { background: #1e1e24; color: #e2e8f0; border: 1px solid #3a3a44; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s; display: flex; justify-content: center; align-items: center; }
+        .btn-panel { background: #1e1e24; color: #e2e8f0; border: 1px solid #3a3a44; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; transition: all 0.2s; display: flex; justify-content: center; align-items: center; text-align: center; }
         .btn-panel:hover { background: #00d2ff; color: #000; border-color: #00d2ff; }
         .btn-panel:disabled { opacity: 0.3; cursor: not-allowed; }
+        
+        .tool-icon-btn { width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #1c1c24; border: 1px solid #2d2d3a; cursor: pointer; transition: all 0.2s; color: #e2e8f0; }
+        .tool-icon-btn:hover, .tool-icon-btn.active { background: #ff9f43; border-color: #ff9f43; color: #000; }
         
         select, input[type="text"], input[type="number"], input[type="password"] { background: #1c1c24; color: #fff; border: 1px solid #2d2d3a; padding: 10px; border-radius: 6px; font-size: 14px; width: 100%; box-sizing: border-box; }
         .sidebar label { font-size: 12px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
@@ -1148,8 +1032,11 @@ export default function App() {
         @media (max-width: 768px) {
            .app-layout { flex-direction: column !important; }
            .mobile-header { display: flex !important; align-items: center; justify-content: space-between; background: #121216; padding: 10px 20px; border-bottom: 1px solid #1e1e24; z-index: 200; height: 60px; box-sizing: border-box; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-           .sidebar { position: fixed !important; top: 0; left: 0; bottom: 0; width: 85vw !important; max-width: 320px; z-index: 1000 !important; transform: translateX(-100%); transition: transform 0.3s ease; height: 100vh !important; }
+           .sidebar, .right-sidebar { position: fixed !important; top: 0; bottom: 0; width: 85vw !important; max-width: 320px; z-index: 1000 !important; transition: transform 0.3s ease; height: 100vh !important; }
+           .sidebar { left: 0; transform: translateX(-100%); }
            .sidebar.open { transform: translateX(0); }
+           .right-sidebar { right: 0; transform: translateX(100%); }
+           .right-sidebar.open { transform: translateX(0); }
            .sidebar-overlay.open { display: block !important; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 999; }
            .main-area { width: 100% !important; padding-top: 10px !important; }
            .top-navbar { position: relative !important; top: 0 !important; left: 0 !important; margin: 10px; overflow-x: auto; white-space: nowrap; flex-wrap: nowrap !important; width: calc(100% - 20px); box-sizing: border-box; }
@@ -1175,14 +1062,15 @@ export default function App() {
         
         {/* HEADER EXCLUSIVO MÓVIL */}
         <div className="mobile-header no-print">
+          <button onClick={() => setSidebarOpen(true)} style={{background:'none', border:'none', color:'#fff', fontSize:'24px', cursor:'pointer', padding:0}}>☰</button>
           <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
             <div style={{width:'12px', height:'12px', borderRadius:'50%', background:'#00d2ff'}}></div>
             <h3 style={{margin:0, letterSpacing:'0.5px', color:'#00d2ff', fontSize:'16px'}}>CAD DIÉDRICO</h3>
           </div>
-          <button onClick={() => setSidebarOpen(true)} style={{background:'none', border:'none', color:'#fff', fontSize:'24px', cursor:'pointer', padding:0}}>☰</button>
+          <button onClick={() => setRightSidebarOpen(true)} style={{background:'none', border:'none', color:'#fff', fontSize:'22px', cursor:'pointer', padding:0}}>🛠️</button>
         </div>
 
-        <div className={`sidebar-overlay ${sidebarOpen && isMobile ? 'open' : ''}`} onClick={() => setSidebarOpen(false)}></div>
+        <div className={`sidebar-overlay ${(sidebarOpen || rightSidebarOpen) && isMobile ? 'open' : ''}`} onClick={() => { setSidebarOpen(false); setRightSidebarOpen(false); }}></div>
         
         {/* COLUMNA IZQUIERDA (CONFIGURACIÓN Y GENERACIÓN) */}
         <div className={`sidebar no-print ${sidebarOpen && isMobile ? 'open' : ''}`}>
@@ -1313,7 +1201,7 @@ export default function App() {
               <option value="150">150%</option>
             </select>
             
-            {!isMobile && <span style={{fontSize:'12px', color:'#94a3b8', fontStyle:'italic', marginLeft:'auto'}}>Izq: Selección Múltiple • Der: Opciones de Edición</span>}
+            {!isMobile && <span style={{fontSize:'12px', color:'#94a3b8', fontStyle:'italic', marginLeft:'auto'}}>Izq: Seleccionar • Der: Herramientas Fijas</span>}
           </div>
 
           <div className="canvas-viewport">
@@ -1417,6 +1305,111 @@ export default function App() {
               ))}
             </div>
           </div>
+        </div>
+
+        {/* NUEVA COLUMNA DERECHA PERMANENTE PARA HERRAMIENTAS Y VÍNCULOS */}
+        <div className={`right-sidebar no-print ${rightSidebarOpen && isMobile ? 'open' : ''}`}>
+          {isMobile && (
+            <button onClick={() => setRightSidebarOpen(false)} style={{position:'absolute', top:'15px', right:'15px', background:'none', border:'none', color:'#fff', fontSize:'24px', cursor:'pointer'}}>✕</button>
+          )}
+          <h3 style={{ color: '#00d2ff', margin: 0, fontSize:'16px', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'15px', marginTop: isMobile ? '40px' : '0' }}>🛠️ Herramientas</h3>
+          
+          <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
+            <button className={`tool-icon-btn ${store.activeTool === 'pointer' ? 'active' : ''}`} onClick={() => store.setPageConfig({activeTool: 'pointer'})} title="Modo Selección (Flecha)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2l12 11.2-5.8.8 3.6 6.6-2.4 1.3-3.6-6.6-3.8 3.7z"/></svg>
+            </button>
+            <button className={`tool-icon-btn ${store.activeTool === 'pan' ? 'active' : ''}`} onClick={() => { store.setPageConfig({activeTool: 'pan'}); store.clearSelection(); }} title="Modo Navegación Libre (Mano)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 1v5h-2v-5h2zM6 11h-5v2h5v-2zM23 11h-5v2h5v-2zM13 18v5h-2v-5h2z"/></svg>
+            </button>
+          </div>
+
+          <hr style={{border:'none', borderTop:'1px solid #444', marginBottom:'20px'}} />
+
+          <h3 style={{ color: '#00d2ff', margin: 0, fontSize:'15px', textTransform:'uppercase', letterSpacing:'1px', marginBottom:'10px' }}>🔗 Edición y Vínculos</h3>
+          <p style={{fontSize:'12px', color:'#94a3b8', marginTop:'0', lineHeight:'1.4', marginBottom:'15px'}}>Haz <b>Clic Izquierdo</b> en los elementos de la hoja para editarlos.</p>
+          
+          {store.selectedElements.length === 0 && (
+              <div style={{background:'#1e1e2f', padding:'15px', borderRadius:'6px', border:'1px solid #444', textAlign:'center'}}>
+                  <span style={{color:'#64748b', fontStyle:'italic', fontSize:'13px'}}>Ningún elemento seleccionado...</span>
+              </div>
+          )}
+
+          <div style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+              {store.selectedElements.map((item, idx) => {
+                  const isSys = item.id.startsWith('sys_');
+                  const isLineOrPlane = item.type === 'recta' || item.type === 'plano';
+                  const hasConstraint = store.constraints.some(c => c.elem1Id === item.id || c.elem2Id === item.id);
+                  
+                  return (
+                      <div key={item.id + idx} style={{background:'#1c1c24', border:'1px solid #00d2ff', borderRadius:'8px', padding:'12px', boxShadow:'0 4px 6px rgba(0,0,0,0.3)'}}>
+                          <div style={{fontSize: '0.95em', color: '#fff', fontWeight: 'bold', marginBottom: '10px'}}>{item.label}</div>
+                          
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                              {!isSys && (
+                                  <button className="btn-panel" style={{background:'#f59e0b', color:'#000', padding:'6px', fontSize:'0.8em'}}
+                                       onClick={() => {
+                                          let oldName = item.label.replace(/(Punto |Recta |Plano )/g, '');
+                                          let newName = prompt("Introduce el nuevo nombre (en blanco para ocultar):", oldName);
+                                          if (newName !== null) store.updateName(item.exId, item.type, item.id, newName);
+                                       }}>✏️ Nombre</button>
+                              )}
+                              
+                              {!isSys && isLineOrPlane && (
+                                  <button className="btn-panel" style={{background:'#2d2d3a', color:'#fff', padding:'6px', fontSize:'0.8em'}}
+                                       onClick={() => store.toggleLineStyle(item.exId, item.type as any, item.id)}>🔄 Línea</button>
+                              )}
+
+                              {!isSys && (
+                                  <label className="btn-panel" style={{background:'#10b981', color:'#000', padding:'6px', fontSize:'0.8em', margin:0, position:'relative', overflow:'hidden'}}>
+                                      🎨 Color
+                                      <input type="color" defaultValue="#000000" style={{position:'absolute', opacity:0, top:0, left:0, width:'100%', height:'100%', cursor:'pointer'}}
+                                             onChange={(e) => store.updateColor(item.exId, item.type, item.id, e.target.value)} />
+                                  </label>
+                              )}
+
+                              {!isSys && (
+                                  <button className="btn-panel" style={{background:'#2d2d3a', color:'#fff', padding:'6px', fontSize:'0.8em'}}
+                                       onClick={() => store.updateName(item.exId, item.type, item.id, "")}>🆑 Ocultar</button>
+                              )}
+
+                              {!isSys && (
+                                  <button className="btn-panel" style={{background:'#ef4444', color:'white', padding:'6px', fontSize:'0.8em', gridColumn: '1 / -1'}}
+                                       onClick={() => store.removeElement(item.exId, item.type, item.id)}>🗑️ Eliminar Elemento</button>
+                              )}
+                          </div>
+
+                          {item.type === 'plano' && (
+                             <button className="btn-panel" style={{background:'#f59e0b', color:'#000', padding:'6px', fontSize:'0.8em', width:'100%', marginTop:'8px'}}
+                                  onClick={() => store.togglePlaneType(item.exId, item.id)}>⮂ Alternar Plano a LT</button>
+                          )}
+                      </div>
+                  );
+              })}
+          </div>
+
+          {store.selectedElements.length === 2 && store.selectedElements[0].exId === store.selectedElements[1].exId && (
+              <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px dashed #444' }}>
+                  <div style={{fontSize: '0.85em', color: '#ff9f43', fontWeight: 'bold', marginBottom: '10px', textTransform:'uppercase'}}>Vincular Ambos:</div>
+                  <div style={{ display: 'flex', flexDirection:'column', gap: '8px' }}>
+                      <button className="btn-panel" style={{background: '#ff9f43', color: '#000'}} onClick={() => { store.applyConstraint('parallel'); store.clearSelection(); }}>║ Hacer Paralelos</button>
+                      <button className="btn-panel" style={{background: '#ff9f43', color: '#000'}} onClick={() => { store.applyConstraint('perpendicular'); store.clearSelection(); }}>⟂ Hacer Perpendiculares</button>
+                  </div>
+              </div>
+          )}
+
+          {store.constraints.length > 0 && (
+              <div style={{marginTop:'20px'}}>
+                  <label style={{color:'#00d2ff', fontWeight:'bold', marginBottom:'10px', display:'block'}}>Vínculos Activos:</label>
+                  <div style={{maxHeight:'200px', overflowY:'auto', display:'flex', flexDirection:'column', gap:'8px'}}>
+                      {store.constraints.map(c => (
+                          <div key={c.id} style={{fontSize:'13px', background:'#363654', padding:'8px 12px', borderRadius:'6px', display:'flex', justifyContent:'space-between', alignItems:'center', color:'#fff'}}>
+                              <span style={{fontWeight:'bold'}}>{c.type === 'parallel' ? '║ Paralelos' : '⟂ Perpendiculares'}</span>
+                              <button style={{background:'#ef4444', border:'none', color:'white', cursor:'pointer', borderRadius:'50%', width:'24px', height:'24px', fontWeight:'bold'}} onClick={() => store.removeConstraint(c.id)}>✕</button>
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          )}
         </div>
 
       </div>
