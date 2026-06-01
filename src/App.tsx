@@ -8,7 +8,7 @@ import { Stage, Layer, Shape, Circle, Group, Line } from 'react-konva';
 export interface ExNode { id: string; t: string; x: number; y: number; pairId?: string; }
 export interface ExPlane { id: string; name: string; type: string; vX: number; p1: {x:number, y:number}; p2: {x:number, y:number}; customStyle?: 'solid' | 'dashed'; color?: string; }
 export interface ExSegment { id: string; label: string; p1: {x:number, y:number}; p2: {x:number, y:number}; isDashed?: boolean; customStyle?: 'solid' | 'dashed'; color?: string; }
-export interface Constraint { id: string; type: 'parallel' | 'perpendicular'; exId: string; elem1Id: string; elem1Type: 'recta' | 'plano'; elem2Id: string; elem2Type: 'recta' | 'plano'; angleDelta: number; }
+export interface Constraint { id: string; type: 'parallel' | 'perpendicular'; exId: string; elem1Id: string; elem1Type: 'recta' | 'plano1' | 'plano2'; elem2Id: string; elem2Type: 'recta' | 'plano1' | 'plano2'; }
 export interface Exercise {
   id: string; title: string; type: string; w: string; h: string; dataStr: string;
   state: { ltY: number; originX: number; ppX: number; reqRegla: boolean; reqPP: boolean; reqOrigin: boolean; planes: ExPlane[]; segments: ExSegment[]; pts: {id:string, name:string, nodes:ExNode[], color?: string}[]; bounds?: { ltX1: number; ltX2: number; oY1: number; oY2: number; pY1: number; pY2: number; } };
@@ -23,15 +23,15 @@ interface CadStore {
   fontFamily: string;
   fontSize: number;
   sheetZoom: number;
-  selectedElements: { exId: string; type: 'punto' | 'recta' | 'plano'; id: string; label: string }[];
+  selectedElements: { exId: string; type: 'punto' | 'recta' | 'plano1' | 'plano2' | 'plano'; id: string; label: string }[];
   constraints: Constraint[];
   contextMenu: { exId: string; items: any[]; x: number; y: number } | null;
   geminiKey: string;
-  evaluation: { isOpen: boolean; loading: boolean; result: string; exId: string | null; img: string };
+  evaluation: { isOpen: boolean; loading: boolean; result: string; exId: string | null; fileData: string; mimeType: string };
   
   setGeminiKey: (k: string) => void;
   setEvaluation: (data: Partial<CadStore['evaluation']>) => void;
-  evaluateWithGemini: (ex: Exercise, imgBase64: string) => Promise<void>;
+  evaluateWithGemini: (ex: Exercise, base64: string, mimeType: string) => Promise<void>;
   
   commitHistory: () => void;
   undo: () => void;
@@ -41,8 +41,9 @@ interface CadStore {
   setContextMenu: (menu: { exId: string; items: any[]; x: number; y: number } | null) => void;
   addExercise: (opts: any) => void;
   removeExercise: (id: string) => void;
+  removeAllExercises: () => void;
   updateBoxSize: (id: string, w: string, h: string) => void;
-  selectElement: (exId: string, type: 'punto' | 'recta' | 'plano', id: string, label: string) => void;
+  selectElement: (exId: string, type: 'punto' | 'recta' | 'plano1' | 'plano2' | 'plano', id: string, label: string) => void;
   clearSelection: () => void;
   applyConstraint: (type: 'parallel' | 'perpendicular') => void;
   removeConstraintsFor: (id: string) => void;
@@ -50,13 +51,13 @@ interface CadStore {
   updatePlane: (exId: string, planeId: string, newVX: number) => void;
   updatePlaneEndpoint: (exId: string, planeId: string, traceNum: 1|2, newX: number, newY: number) => void;
   togglePlaneType: (exId: string, planeId: string) => void;
-  toggleLineStyle: (exId: string, elemType: 'recta' | 'plano', elemId: string) => void;
-  updateColor: (exId: string, elemType: 'punto' | 'recta' | 'plano', elemId: string, color: string) => void;
+  toggleLineStyle: (exId: string, elemType: 'recta' | 'plano1' | 'plano2' | 'plano', elemId: string) => void;
+  updateColor: (exId: string, elemType: 'punto' | 'recta' | 'plano1' | 'plano2' | 'plano', elemId: string, color: string) => void;
   updateSegment: (exId: string, segId: string, pointIndex: 1|2, newX: number, newY: number) => void;
   updateSystem: (exId: string, target: string, valX: number, valY: number) => void;
   addFreeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano') => void;
-  removeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano', elemId: string) => void;
-  updateName: (exId: string, elemType: 'punto' | 'recta' | 'plano', elemId: string, newName: string) => void;
+  removeElement: (exId: string, elemType: 'punto' | 'recta' | 'plano1' | 'plano2' | 'plano', elemId: string) => void;
+  updateName: (exId: string, elemType: 'punto' | 'recta' | 'plano1' | 'plano2' | 'plano', elemId: string, newName: string) => void;
   updateExerciseText: (exId: string, field: 'title' | 'dataStr', text: string) => void;
   saveData: () => void;
   loadData: () => void;
@@ -82,42 +83,79 @@ function getLineAngle(p1: {x:number, y:number}, p2: {x:number, y:number}) {
   return Math.atan2(p2.y - p1.y, p2.x - p1.x);
 }
 
-function enforceConstraintPair(ex: Exercise, c: Constraint, structuralChangeOnId: string) {
-  let seg1 = ex.state.segments.find(s => s.id === c.elem1Id);
-  let pl1 = ex.state.planes.find(p => p.id === c.elem1Id);
-  let seg2 = ex.state.segments.find(s => s.id === c.elem2Id);
-  let pl2 = ex.state.planes.find(p => p.id === c.elem2Id);
+function applyDragConstraint(ex: Exercise, targetId: string, targetType: string, staticP: {x:number, y:number}, rawX: number, rawY: number, constraints: Constraint[]) {
+  const c = constraints.find(c => (c.elem1Id === targetId && c.elem1Type === targetType) || (c.elem2Id === targetId && c.elem2Type === targetType));
+  if (!c) return { x: rawX, y: rawY };
 
-  if (!seg1 && !pl1) return;
-  if (!seg2 && !pl2) return;
+  const isElem1 = c.elem1Id === targetId;
+  const otherId = isElem1 ? c.elem2Id : c.elem1Id;
+  const otherType = isElem1 ? c.elem2Type : c.elem1Type;
 
-  let targetAngle = 0;
-  let driverP1 = {x:0, y:0}, driverP2 = {x:0, y:0};
-  let driverIs2 = (structuralChangeOnId === c.elem2Id);
-  
-  let driverSeg = driverIs2 ? seg2 : seg1;
-  let driverPl = driverIs2 ? pl2 : pl1;
-  let drivenSeg = driverIs2 ? seg1 : seg2;
-  let drivenPl = driverIs2 ? pl1 : pl2;
-
-  if (driverSeg) { driverP1 = driverSeg.p1; driverP2 = driverSeg.p2; }
-  else if (driverPl) { driverP1 = {x: driverPl.vX, y: ex.state.ltY}; driverP2 = driverPl.p2; } 
-  
-  let baseAngle = getLineAngle(driverP1, driverP2);
-  targetAngle = c.type === 'parallel' ? baseAngle : baseAngle + Math.PI/2;
-
-  if (drivenSeg) {
-      let len = Math.hypot(drivenSeg.p2.y - drivenSeg.p1.y, drivenSeg.p2.x - drivenSeg.p1.x);
-      drivenSeg.p2.x = drivenSeg.p1.x + len * Math.cos(targetAngle);
-      drivenSeg.p2.y = drivenSeg.p1.y + len * Math.sin(targetAngle);
-  } else if (drivenPl) {
-      let len2 = Math.hypot(drivenPl.p2.y - ex.state.ltY, drivenPl.p2.x - drivenPl.vX);
-      drivenPl.p2.x = drivenPl.vX + len2 * Math.cos(targetAngle);
-      drivenPl.p2.y = ex.state.ltY + len2 * Math.sin(targetAngle);
+  let otherP1, otherP2;
+  if (otherType === 'recta') {
+     const oSeg = ex.state.segments.find(s => s.id === otherId);
+     if (!oSeg) return { x: rawX, y: rawY };
+     otherP1 = oSeg.p1; otherP2 = oSeg.p2;
+  } else {
+     const oPl = ex.state.planes.find(p => p.id === otherId);
+     if (!oPl) return { x: rawX, y: rawY };
+     otherP1 = { x: oPl.vX, y: ex.state.ltY };
+     otherP2 = otherType === 'plano1' ? oPl.p1 : oPl.p2;
   }
+
+  const alpha = Math.atan2(otherP2.y - otherP1.y, otherP2.x - otherP1.x);
+  const theta = c.type === 'parallel' ? alpha : alpha + Math.PI / 2;
+
+  const dx = rawX - staticP.x;
+  const dy = rawY - staticP.y;
+  const dot = dx * Math.cos(theta) + dy * Math.sin(theta);
+  
+  return { x: staticP.x + dot * Math.cos(theta), y: staticP.y + dot * Math.sin(theta) };
 }
 
-// PROTECCIÓN: Carga inicial unificada
+function enforceAllConstraints(ex: Exercise, draggedId: string, constraints: Constraint[]) {
+  constraints.filter(c => c.exId === ex.id && (c.elem1Id === draggedId || c.elem2Id === draggedId)).forEach(c => {
+    const isElem1 = c.elem1Id === draggedId;
+    const drivenId = isElem1 ? c.elem2Id : c.elem1Id;
+    const drivenType = isElem1 ? c.elem2Type : c.elem1Type;
+    const driverId = isElem1 ? c.elem1Id : c.elem2Id;
+    const driverType = isElem1 ? c.elem1Type : c.elem2Type;
+
+    let driverP1, driverP2;
+    if (driverType === 'recta') {
+      const dSeg = ex.state.segments.find(s => s.id === driverId);
+      if (!dSeg) return;
+      driverP1 = dSeg.p1; driverP2 = dSeg.p2;
+    } else {
+      const dPl = ex.state.planes.find(p => p.id === driverId);
+      if (!dPl) return;
+      driverP1 = { x: dPl.vX, y: ex.state.ltY }; driverP2 = driverType === 'plano1' ? dPl.p1 : dPl.p2;
+    }
+
+    let alpha = getLineAngle(driverP1, driverP2);
+    let targetAngle = c.type === 'parallel' ? alpha : alpha + Math.PI/2;
+
+    if (drivenType === 'recta') {
+      let drivenSeg = ex.state.segments.find(s => s.id === drivenId);
+      if(drivenSeg) {
+        let len = Math.hypot(drivenSeg.p2.y - drivenSeg.p1.y, drivenSeg.p2.x - drivenSeg.p1.x);
+        drivenSeg.p2.x = drivenSeg.p1.x + len * Math.cos(targetAngle);
+        drivenSeg.p2.y = drivenSeg.p1.y + len * Math.sin(targetAngle);
+      }
+    } else {
+      let drivenPl = ex.state.planes.find(p => p.id === drivenId);
+      if(drivenPl) {
+        let staticP = { x: drivenPl.vX, y: ex.state.ltY };
+        let currentP2 = drivenType === 'plano1' ? drivenPl.p1 : drivenPl.p2;
+        let len = Math.hypot(currentP2.y - staticP.y, currentP2.x - staticP.x);
+        let newX = staticP.x + len * Math.cos(targetAngle);
+        let newY = staticP.y + len * Math.sin(targetAngle);
+        if (drivenType === 'plano1') drivenPl.p1 = {x: newX, y: newY}; else drivenPl.p2 = {x: newX, y: newY};
+      }
+    }
+  });
+}
+
 let initialExercises: Exercise[] = [];
 try {
   const savedData = localStorage.getItem('diedrico_app_data');
@@ -142,7 +180,7 @@ export const useStore = create<CadStore>()((set, get) => ({
   contextMenu: null,
   
   geminiKey: localStorage.getItem('diedrico_gemini_key') || '',
-  evaluation: { isOpen: false, loading: false, result: '', exId: null, img: '' },
+  evaluation: { isOpen: false, loading: false, result: '', exId: null, fileData: '', mimeType: '' },
   
   setGeminiKey: (k: string) => {
     localStorage.setItem('diedrico_gemini_key', k);
@@ -151,22 +189,22 @@ export const useStore = create<CadStore>()((set, get) => ({
   
   setEvaluation: (data) => set(s => ({ evaluation: { ...s.evaluation, ...data } })),
   
-  evaluateWithGemini: async (ex, imgBase64) => {
-    set(s => ({ evaluation: { ...s.evaluation, isOpen: true, loading: true, result: '', exId: ex.id, img: imgBase64 } }));
+  evaluateWithGemini: async (ex, base64Str, mimeType) => {
+    set(s => ({ evaluation: { ...s.evaluation, isOpen: true, loading: true, result: '', exId: ex.id, fileData: base64Str, mimeType: mimeType } }));
     const key = get().geminiKey;
     if (!key) {
         set(s => ({ evaluation: { ...s.evaluation, loading: false, result: 'Por favor, introduce tu API Key de Gemini para activar el solucionador.' } }));
         return;
     }
     try {
-        const base64Data = imgBase64.split(',')[1];
-        const prompt = `Eres un experto en Dibujo Técnico (Sistema Diédrico). Tu tarea es resolver el siguiente ejercicio para un alumno de 1º de Bachillerato: "${ex.title}". Datos del ejercicio: ${ex.dataStr}. No quiero que evalúes la imagen adjunta para decir si está bien o mal, ignora los trazos erróneos que pueda haber. Úsala solo para tener contexto. Usa tu conocimiento para describir EXACTAMENTE cómo es la SOLUCIÓN FINAL dibujada de este ejercicio. Explica qué líneas, trazas o puntos conforman la solución final en la hoja, cómo interactúan (paralelismos, perpendicularidades, intersecciones, visibilidad de partes ocultas) y qué resultado visual exacto debe quedar dibujado para que el ejercicio esté perfecto. Ve directo al grano.`;
+        const base64Data = base64Str.split(',')[1] || base64Str;
+        const prompt = `Eres un experto en Dibujo Técnico (Sistema Diédrico). Tu tarea es resolver el siguiente ejercicio para un alumno de 1º de Bachillerato: "${ex.title}". Datos del ejercicio: ${ex.dataStr}. No quiero que evalúes el archivo adjunto para decir si está bien o mal, ignora los trazos erróneos que pueda haber. Úsalo solo para tener contexto. Usa tu conocimiento para describir EXACTAMENTE cómo es la SOLUCIÓN FINAL dibujada de este ejercicio. Explica qué líneas, trazas o puntos conforman la solución final en la hoja, cómo interactúan (paralelismos, perpendicularidades, intersecciones, visibilidad de partes ocultas) y qué resultado visual exacto debe quedar dibujado para que el ejercicio esté perfecto. Ve directo al grano.`;
         
         const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${key}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64Data } }] }]
+                contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType: mimeType, data: base64Data } }] }]
             })
         });
         const data = await response.json();
@@ -227,7 +265,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       exercises: st.exercises.map(ex => {
         if (ex.id !== e1.exId) return ex;
         let cloned = JSON.parse(JSON.stringify(ex));
-        enforceConstraintPair(cloned, newConstraint, e1.id);
+        enforceAllConstraints(cloned, e1.id, [...st.constraints, newConstraint]);
         return cloned;
       }),
       constraints: [...st.constraints, newConstraint],
@@ -241,7 +279,7 @@ export const useStore = create<CadStore>()((set, get) => ({
     get().commitHistory();
   },
 
-  saveData: () => { localStorage.setItem('diedrico_app_data', JSON.stringify(get().exercises)); alert("Lámina guardada correctamente en este navegador."); },
+  saveData: () => { localStorage.setItem('diedrico_app_data', JSON.stringify(get().exercises)); alert("Lámina guardada en este navegador."); },
   loadData: () => { 
     const d = localStorage.getItem('diedrico_app_data'); 
     if (d) { set({ exercises: JSON.parse(d) }); get().commitHistory(); alert("Datos cargados correctamente."); } else alert("No hay datos guardados localmente."); 
@@ -251,8 +289,17 @@ export const useStore = create<CadStore>()((set, get) => ({
     localStorage.setItem('diedrico_app_data', JSON.stringify(newExs));
   },
   downloadData: () => { 
+    let fileName = prompt("Introduce el nombre con el que se descargará el archivo:", "lamina_diedrico");
+    if (!fileName) return;
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(get().exercises));
-    const a = document.createElement('a'); a.href = dataStr; a.download = `lamina_diedrico_${new Date().getTime()}.json`; a.click();
+    const a = document.createElement('a'); a.href = dataStr; a.download = fileName.replace('.json','') + '.json'; a.click();
+  },
+
+  removeAllExercises: () => {
+    if(confirm("¿Estás seguro de que quieres borrar todos los ejercicios?")) {
+      set({ exercises: [], selectedElements: [], constraints: [] });
+      get().commitHistory();
+    }
   },
 
   addExercise: (opts) => {
@@ -472,7 +519,7 @@ export const useStore = create<CadStore>()((set, get) => ({
         let s = { ...ex.state };
         if (elemType === 'punto') s.pts = s.pts.filter(p => p.id !== elemId && !p.nodes.some(n=>n.id===elemId));
         else if (elemType === 'recta') s.segments = s.segments.filter(sg => sg.id !== elemId);
-        else if (elemType === 'plano') s.planes = s.planes.filter(pl => pl.id !== elemId);
+        else if (elemType.includes('plano')) s.planes = s.planes.filter(pl => pl.id !== elemId);
         return { ...ex, state: s };
       })
     }));
@@ -485,7 +532,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       let s = {...ex.state};
       if(elemType === 'punto') s.pts = s.pts.map(p => p.id === elemId ? {...p, name: newName} : p);
       else if(elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? {...seg, label: newName} : seg);
-      else if(elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
+      else if(elemType.includes('plano')) s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, name: newName} : pl);
       return {...ex, state: s};
     })}));
     get().commitHistory();
@@ -497,7 +544,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       let s = {...ex.state};
       if(elemType === 'punto') s.pts = s.pts.map(p => p.id === elemId ? {...p, color} : p);
       else if(elemType === 'recta') s.segments = s.segments.map(seg => seg.id === elemId ? {...seg, color} : seg);
-      else if(elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, color} : pl);
+      else if(elemType.includes('plano')) s.planes = s.planes.map(pl => pl.id === elemId ? {...pl, color} : pl);
       return {...ex, state: s};
     })}));
     get().commitHistory();
@@ -522,7 +569,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       let s = { ...ex.state };
       const nSt = (c?: string) => c === 'solid' ? 'dashed' : c === 'dashed' ? undefined : 'solid';
       if (elemType === 'recta') s.segments = s.segments.map(sg => sg.id === elemId ? { ...sg, customStyle: nSt(sg.customStyle) } : sg);
-      else if (elemType === 'plano') s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nSt(pl.customStyle) } : pl);
+      else if (elemType.includes('plano')) s.planes = s.planes.map(pl => pl.id === elemId ? { ...pl, customStyle: nSt(pl.customStyle) } : pl);
       return { ...ex, state: s };
     })}));
     get().commitHistory();
@@ -560,7 +607,7 @@ export const useStore = create<CadStore>()((set, get) => ({
       let pl = cloned.state.planes.find(p => p.id === planeId);
       if (pl) {
         let dx = newVX - pl.vX; pl.vX = newVX; pl.p1.x += dx; pl.p2.x += dx;
-        st.constraints.filter(c => c.exId === exId && (c.elem1Id === planeId || c.elem2Id === planeId)).forEach(c => enforceConstraintPair(cloned, c, planeId));
+        enforceAllConstraints(cloned, planeId, st.constraints);
       }
       return cloned;
     })
@@ -572,8 +619,11 @@ export const useStore = create<CadStore>()((set, get) => ({
       let cloned = JSON.parse(JSON.stringify(ex)) as Exercise;
       let pl = cloned.state.planes.find(p => p.id === planeId);
       if (pl) {
-        if (traceNum === 1) pl.p1 = { x: newX, y: newY }; else pl.p2 = { x: newX, y: newY };
-        st.constraints.filter(c => c.exId === exId && (c.elem1Id === planeId || c.elem2Id === planeId)).forEach(c => enforceConstraintPair(cloned, c, planeId));
+        const targetType = traceNum === 1 ? 'plano1' : 'plano2';
+        const staticP = { x: pl.vX, y: cloned.state.ltY };
+        const { x: nx, y: ny } = applyDragConstraint(cloned, planeId, targetType, staticP, newX, newY, st.constraints);
+        if (traceNum === 1) pl.p1 = { x: nx, y: ny }; else pl.p2 = { x: nx, y: ny };
+        enforceAllConstraints(cloned, planeId, st.constraints);
       }
       return cloned;
     })
@@ -585,8 +635,10 @@ export const useStore = create<CadStore>()((set, get) => ({
       let cloned = JSON.parse(JSON.stringify(ex)) as Exercise;
       let seg = cloned.state.segments.find(s => s.id === segId);
       if (seg) {
-        if (pointIndex === 1) seg.p1 = { x: newX, y: newY }; else seg.p2 = { x: newX, y: newY };
-        st.constraints.filter(c => c.exId === exId && (c.elem1Id === segId || c.elem2Id === segId)).forEach(c => enforceConstraintPair(cloned, c, segId));
+        const staticP = pointIndex === 1 ? seg.p2 : seg.p1;
+        const { x: nx, y: ny } = applyDragConstraint(cloned, segId, 'recta', staticP, newX, newY, st.constraints);
+        if (pointIndex === 1) seg.p1 = { x: nx, y: ny }; else seg.p2 = { x: nx, y: ny };
+        enforceAllConstraints(cloned, segId, st.constraints);
       }
       return cloned;
     })
@@ -635,9 +687,9 @@ function View2D({ ex }: { ex: Exercise }) {
   const sc = (val: number) => val / scale;
   const getFont = (size: number, weight = "") => `${weight} ${sc(size)}px Arial`.trim();
 
-  const handleHover = (e: any) => { e.target.moveToTop(); e.target.scale({x:1.5, y:1.5}); document.body.style.cursor='pointer'; };
+  const handleHover = (e: any) => { if(store.activeTool==='pointer') { e.target.moveToTop(); e.target.scale({x:1.3, y:1.3}); document.body.style.cursor='pointer'; } };
   const handleOut = (e: any) => { e.target.scale({x:1, y:1}); document.body.style.cursor='default'; };
-  const handleHoverLine = () => { document.body.style.cursor='pointer'; };
+  const handleHoverLine = () => { if(store.activeTool==='pointer') document.body.style.cursor='pointer'; };
   const handleOutLine = () => { document.body.style.cursor='default'; };
 
   const drawHaloText = (ctx: any, text: string, x: number, y: number, font = getFont(15, "bold"), align = "left", color = "black") => {
@@ -728,10 +780,9 @@ function View2D({ ex }: { ex: Exercise }) {
     }
 
     (planes || []).forEach((pl: ExPlane) => {
-      const isSel = store.selectedElements.some(s => s.id === pl.id);
+      const isSel1 = store.selectedElements.some(s => s.id === pl.id && s.type === 'plano1');
+      const isSel2 = store.selectedElements.some(s => s.id === pl.id && s.type === 'plano2');
       const c = pl.color || "black";
-      ctx.strokeStyle = isSel ? "#ff9f43" : c; 
-      ctx.lineWidth = isSel ? 3.5 : 2.2;
       
       const applyDash = (isAutoDashed: boolean) => {
           if (pl.customStyle === 'solid') ctx.setLineDash([]);
@@ -740,19 +791,19 @@ function View2D({ ex }: { ex: Exercise }) {
       };
 
       if (pl.type === 'horizontal') {
-        applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke(); ctx.setLineDash([]);
+        applyDash(false); ctx.strokeStyle = isSel2 ? "#ff9f43" : c; ctx.lineWidth = isSel2 ? 3.5 : 2.2; ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke(); ctx.setLineDash([]);
         if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), undefined, c);
       } else if (pl.type === 'frontal') {
-        applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
+        applyDash(false); ctx.strokeStyle = isSel1 ? "#ff9f43" : c; ctx.lineWidth = isSel1 ? 3.5 : 2.2; ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
         if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), undefined, c);
       } else if (pl.type === 'paralelo_lt') {
-        applyDash(false); ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
+        applyDash(false); ctx.strokeStyle = isSel2 ? "#ff9f43" : c; ctx.lineWidth = isSel2 ? 3.5 : 2.2; ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p2.y); ctx.lineTo(b.ltX2, pl.p2.y); ctx.stroke();
+        ctx.strokeStyle = isSel1 ? "#ff9f43" : c; ctx.lineWidth = isSel1 ? 3.5 : 2.2; ctx.beginPath(); ctx.moveTo(b.ltX1, pl.p1.y); ctx.lineTo(b.ltX2, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
         if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), undefined, c);
         if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), undefined, c);
       } else {
-        applyDash(pl.p2.y >= ltY); ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
-        applyDash(pl.p1.y <= ltY); ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
+        applyDash(pl.p2.y >= ltY); ctx.strokeStyle = isSel2 ? "#ff9f43" : c; ctx.lineWidth = isSel2 ? 3.5 : 2.2; ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p2.x, pl.p2.y); ctx.stroke();
+        applyDash(pl.p1.y <= ltY); ctx.strokeStyle = isSel1 ? "#ff9f43" : c; ctx.lineWidth = isSel1 ? 3.5 : 2.2; ctx.beginPath(); ctx.moveTo(pl.vX, ltY); ctx.lineTo(pl.p1.x, pl.p1.y); ctx.stroke(); ctx.setLineDash([]);
         if (pl.name) queueLabel(`${pl.name}2`, pl.p2.x, pl.p2.y - sc(10), undefined, c);
         if (pl.name) queueLabel(`${pl.name}1`, pl.p1.x, pl.p1.y + sc(20), undefined, c);
       }
@@ -771,9 +822,10 @@ function View2D({ ex }: { ex: Exercise }) {
     ctx.setLineDash([]);
     
     (pts || []).forEach((p: any) => {
-      const c = p.color || "black";
+      const isSel = store.selectedElements.some(s => s.id === p.id);
+      const c = isSel ? "#ff9f43" : (p.color || "black");
       p.nodes.forEach((n: ExNode) => { 
-        ctx.beginPath(); ctx.strokeStyle = c; ctx.lineWidth = sc(1.5);
+        ctx.beginPath(); ctx.strokeStyle = c; ctx.lineWidth = isSel ? sc(3) : sc(1.5);
         let cs = sc(5); ctx.moveTo(n.x, n.y - cs); ctx.lineTo(n.x, n.y + cs); ctx.moveTo(n.x - cs, n.y); ctx.lineTo(n.x + cs, n.y); ctx.stroke();
         if (p.name) queueLabel(`${p.name}${n.t}`, n.x + sc(8), n.y - sc(8), undefined, c); 
       });
@@ -815,55 +867,17 @@ function View2D({ ex }: { ex: Exercise }) {
 
   const b = ex.state?.bounds || { ltX1: 0, ltX2: 800, oY1: 0, oY2: 400, pY1: 0, pY2: 400 };
 
-  const handleContextMenuLogic = (e: any, isTouch = false) => {
-     if(!isTouch) e.evt.preventDefault();
-     const stage = e.target.getStage(); const pos = stage?.getPointerPosition();
-     if (!stage || !pos) return;
-     const shapes = stage.getAllIntersections(pos);
-     const handleShapes = shapes.filter((s:any) => (s.getClassName() === 'Circle' || s.getClassName() === 'Line') && s.attrs.name && s.attrs.id);
-     
-     if (handleShapes.length > 0) {
-       const uniqueMap = new Map();
-       handleShapes.forEach((s:any) => {
-         let rId = s.attrs.id; if (rId.includes('_')) rId = rId.split('_')[1];
-         let label = s.attrs.name;
-         if (label.includes('Extremo') || label.includes('Recta')) label = 'Recta ' + label.replace(/Extremo |Recta | \(.*/g, '').replace(/[12]/g, '');
-         else if (label.includes('Traza') || label.includes('Plano')) label = 'Plano ' + label.replace(/Traza |Plano | Horizontal | Frontal | Oblicuo /g, '').replace(/[12]/g, '');
-         else if (label.includes('Punto')) label = 'Punto ' + label.replace(/Punto /, '').replace(/[12]/g, '');
-         if (!uniqueMap.has(rId)) uniqueMap.set(rId, { label: label.trim(), id: s.attrs.id, type: s.attrs.name.includes('Punto') ? 'punto' : s.attrs.name.includes('Plano') || s.attrs.name.includes('Traza') ? 'plano' : 'recta' });
-       });
-       
-       let cX = e.evt.clientX; let cY = e.evt.clientY;
-       if (isTouch) {
-           if (e.evt.touches && e.evt.touches.length > 0) { cX = e.evt.touches[0].clientX; cY = e.evt.touches[0].clientY; }
-           else if (e.evt.changedTouches && e.evt.changedTouches.length > 0) { cX = e.evt.changedTouches[0].clientX; cY = e.evt.changedTouches[0].clientY; }
-       }
-       
-       store.setContextMenu({ exId: ex.id, items: Array.from(uniqueMap.values()), x: cX, y: cY });
-     } else {
-       store.setContextMenu(null);
-     }
-  };
-
   return (
     <div id={`stage-${ex.id}`} style={{width: '100%', height: '100%', position: 'relative', overflow: 'hidden'}}>
       <div ref={containerRef} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}>
-        <Stage width={dim.w || 800} height={dim.h || 400} 
+        <Stage width={dim.w || 800} height={dim.h || 400} draggable={store.activeTool === 'pan'}
                onDragEnd={() => { setSelectedId(null); store.commitHistory(); }}
                onClick={(e)=>{
-                 if(e.evt.button===0) { store.setContextMenu(null); if (e.target === e.target.getStage()) { setSelectedId(null); store.clearSelection(); } }
+                 if(e.evt.button===0) { if (e.target === e.target.getStage()) { setSelectedId(null); store.clearSelection(); } }
                }}
                onTap={(e)=>{
-                 if(e.target === e.target.getStage()) { store.setContextMenu(null); setSelectedId(null); store.clearSelection(); }
+                 if(e.target === e.target.getStage()) { setSelectedId(null); store.clearSelection(); }
                }}
-               onContextMenu={(e)=> handleContextMenuLogic(e, false)}
-               onTouchStart={(e)=>{
-                 if(e.evt.touches && e.evt.touches.length === 1) {
-                   touchTimeout.current = setTimeout(() => { handleContextMenuLogic(e, true); }, 500);
-                 }
-               }}
-               onTouchMove={()=>{ if(touchTimeout.current) clearTimeout(touchTimeout.current); }}
-               onTouchEnd={()=>{ if(touchTimeout.current) clearTimeout(touchTimeout.current); }}
                >
           <Layer scaleX={scale} scaleY={scale} x={offsetX} y={offsetY}>
             <Shape sceneFunc={drawScene} />
@@ -871,21 +885,25 @@ function View2D({ ex }: { ex: Exercise }) {
             <Group visible={!store.isPrinting}>
               {(segments || []).map(seg => (
                 <Line key={`hit_seg_${seg.id}`} id={`segHit_${seg.id}`} name={`Recta ${seg.label}`} points={[seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y]} stroke="transparent" strokeWidth={sc(20)} onMouseEnter={handleHoverLine} onMouseLeave={handleOutLine} 
-                      onClick={(e)=>{ if(e.evt.button === 0) { e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); store.setContextMenu(null); } }}
-                      onTap={(e)=>{ e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); store.setContextMenu(null); }} />
+                      onClick={(e)=>{ if(e.evt.button === 0 && store.activeTool === 'pointer') { e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); } }}
+                      onTap={(e)=>{ if(store.activeTool === 'pointer') { e.cancelBubble = true; store.selectElement(ex.id, 'recta', seg.id, `Recta ${seg.label || ''}`); } }} />
               ))}
               {(planes || []).map(pl => {
-                const hitProps = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, 
-                  onClick: (e:any) => { if(e.evt.button===0) { e.cancelBubble=true; store.selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); store.setContextMenu(null); } },
-                  onTap: (e:any) => { e.cancelBubble=true; store.selectElement(ex.id, 'plano', pl.id, `Plano ${pl.name}`); store.setContextMenu(null); }
+                const hitProps1 = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, 
+                  onClick: (e:any) => { if(e.evt.button===0 && store.activeTool === 'pointer') { e.cancelBubble=true; store.selectElement(ex.id, 'plano1', pl.id, `Traza 1 ${pl.name}`); } },
+                  onTap: (e:any) => { if(store.activeTool === 'pointer') { e.cancelBubble=true; store.selectElement(ex.id, 'plano1', pl.id, `Traza 1 ${pl.name}`); } }
                 };
-                if (pl.type === 'horizontal') return <Line key={`hit_pl_${pl.id}`} id={`plHit_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} />;
-                if (pl.type === 'frontal') return <Line key={`hit_pl_${pl.id}`} id={`plHit_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} />;
-                if (pl.type === 'paralelo_lt') return <React.Fragment key={`hit_pl_${pl.id}`}><Line id={`plHit2_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps} /><Line id={`plHit1_${pl.id}`} name={`Plano ${pl.name}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps} /></React.Fragment>;
+                const hitProps2 = { stroke: "transparent", strokeWidth: sc(20), onMouseEnter: handleHoverLine, onMouseLeave: handleOutLine, 
+                  onClick: (e:any) => { if(e.evt.button===0 && store.activeTool === 'pointer') { e.cancelBubble=true; store.selectElement(ex.id, 'plano2', pl.id, `Traza 2 ${pl.name}`); } },
+                  onTap: (e:any) => { if(store.activeTool === 'pointer') { e.cancelBubble=true; store.selectElement(ex.id, 'plano2', pl.id, `Traza 2 ${pl.name}`); } }
+                };
+                if (pl.type === 'horizontal') return <Line key={`hit_pl2_${pl.id}`} points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps2} />;
+                if (pl.type === 'frontal') return <Line key={`hit_pl1_${pl.id}`} points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps1} />;
+                if (pl.type === 'paralelo_lt') return <React.Fragment key={`hit_pl_${pl.id}`}><Line points={[b.ltX1, pl.p2.y, b.ltX2, pl.p2.y]} {...hitProps2} /><Line points={[b.ltX1, pl.p1.y, b.ltX2, pl.p1.y]} {...hitProps1} /></React.Fragment>;
                 return (
                   <React.Fragment key={`hit_pl_${pl.id}`}>
-                    <Line id={`plHit2_${pl.id}`} name={`Plano ${pl.name}`} points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} {...hitProps} />
-                    <Line id={`plHit1_${pl.id}`} name={`Plano ${pl.name}`} points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} {...hitProps} />
+                    <Line points={[pl.vX, ltY, pl.p2.x, pl.p2.y]} {...hitProps2} />
+                    <Line points={[pl.vX, ltY, pl.p1.x, pl.p1.y]} {...hitProps1} />
                   </React.Fragment>
                 );
               })}
@@ -910,29 +928,24 @@ function View2D({ ex }: { ex: Exercise }) {
                 </React.Fragment>
               )}
 
-              {planes.map(pl => {
-                if (pl.type === 'horizontal') return <Circle key={pl.id} id={`pl2_${pl.id}`} name={`Plano Horizontal ${pl.name}`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />;
-                if (pl.type === 'frontal') return <Circle key={pl.id} id={`pl1_${pl.id}`} name={`Plano Frontal ${pl.name}`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />;
-                if (pl.type === 'paralelo_lt') return <React.Fragment key={pl.id}><Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} /><Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0,150,255,0.4)" draggable onDragMove={e=>store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} /></React.Fragment>;
-                return (
-                  <React.Fragment key={pl.id}>
-                    <Circle id={`pl_${pl.id}`} name={`Plano Oblicuo ${pl.name}`} x={pl.vX} y={ltY} radius={sc(15)} fill="rgba(0, 150, 255, 0.4)" draggable dragBoundFunc={(pos) => ({ x: pos.x, y: ltY })} onDragMove={(e) => store.updatePlane(ex.id, pl.id, e.target.x())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl_${pl.id}`} stroke={selectedId === `pl_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl_${pl.id}` ? sc(3) : sc(25)} />
-                    <Circle id={`pl2_${pl.id}`} name={`Traza ${pl.name}2`} x={pl.p2.x} y={pl.p2.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl2_${pl.id}`} stroke={selectedId === `pl2_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl2_${pl.id}` ? sc(3) : sc(25)} />
-                    <Circle id={`pl1_${pl.id}`} name={`Traza ${pl.name}1`} x={pl.p1.x} y={pl.p1.y} radius={sc(12)} fill="rgba(0, 150, 255, 0.4)" draggable onDragMove={e => store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'plano', pl.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pl1_${pl.id}`} stroke={selectedId === `pl1_${pl.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pl1_${pl.id}` ? sc(3) : sc(25)} />
-                  </React.Fragment>
-                );
-              })}
-
-              {segments.map(seg => (
-                <React.Fragment key={seg.id}>
-                  <Circle id={`seg1_${seg.id}`} name={`Extremo ${seg.label} (Inicio)`} x={seg.p1.x} y={seg.p1.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg1_${seg.id}`} stroke={selectedId === `seg1_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg1_${seg.id}` ? sc(3) : sc(25)} />
-                  <Circle id={`seg2_${seg.id}`} name={`Extremo ${seg.label} (Fin)`} x={seg.p2.x} y={seg.p2.y} radius={sc(10)} fill="rgba(255, 100, 100, 0.4)" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'recta', seg.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `seg2_${seg.id}`} stroke={selectedId === `seg2_${seg.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `seg2_${seg.id}` ? sc(3) : sc(25)} />
-                </React.Fragment>
+              {/* TIRADORES DE ARRASTRE CAD */}
+              {store.activeTool === 'pointer' && (segments || []).map(seg => (
+                <Group key={`drags-${seg.id}`}>
+                  <Circle x={seg.p1?.x || 0} y={seg.p1?.y || 0} radius={sc(8)} fill="#00d2ff" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle x={seg.p2?.x || 0} y={seg.p2?.y || 0} radius={sc(8)} fill="#00d2ff" draggable onDragMove={(e) => store.updateSegment(ex.id, seg.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                </Group>
               ))}
-              {pts.map(p => p.nodes.map(n => (
-                <Circle key={n.id} id={`pt_${n.id}`} name={`Punto ${p.name}${n.t}`} x={n.x} y={n.y} radius={sc(12)} fill="rgba(255, 71, 87, 0.4)" draggable onDragMove={(e) => store.updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onDblClick={()=>store.removeElement(ex.id, 'punto', p.id)} onMouseEnter={handleHover} onMouseLeave={handleOut} listening={!selectedId || selectedId === `pt_${n.id}`} stroke={selectedId === `pt_${n.id}` ? "#fff" : "transparent"} strokeWidth={selectedId === `pt_${n.id}` ? sc(3) : sc(25)} 
-                        onClick={(e) => { if(e.evt.button === 0) { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); store.setContextMenu(null); } }}
-                        onTap={(e) => { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); store.setContextMenu(null); }} />
+              {store.activeTool === 'pointer' && (planes || []).map(pl => (
+                <Group key={`drags-pl-${pl.id}`}>
+                  <Circle x={pl.vX || 0} y={ltY || 0} radius={sc(10)} fill="#ff9f43" draggable dragBoundFunc={(p)=>({x:p.x, y:ltY || 0})} onDragMove={(e) => store.updatePlane(ex.id, pl.id, e.target.x())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle x={pl.p2?.x || 0} y={pl.p2?.y || 0} radius={sc(8)} fill="#ff9f43" draggable onDragMove={(e) => store.updatePlaneEndpoint(ex.id, pl.id, 2, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                  <Circle x={pl.p1?.x || 0} y={pl.p1?.y || 0} radius={sc(8)} fill="#ff9f43" draggable onDragMove={(e) => store.updatePlaneEndpoint(ex.id, pl.id, 1, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} />
+                </Group>
+              ))}
+              {store.activeTool === 'pointer' && (pts || []).map(p => p.nodes.map(n => (
+                <Circle key={`drags-pt-${n.id}`} x={n.x} y={n.y} radius={sc(12)} fill="transparent" draggable onDragMove={(e) => store.updateNode(ex.id, p.id, n.id, e.target.x(), e.target.y())} onMouseEnter={handleHover} onMouseLeave={handleOut} 
+                        onClick={(e) => { if(e.evt.button === 0) { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); } }}
+                        onTap={(e) => { e.cancelBubble = true; store.selectElement(ex.id, 'punto', p.id, `Punto ${p.name}`); }} />
               )))}
             </Group>
           </Layer>
@@ -1007,14 +1020,16 @@ export default function App() {
         .app-layout { display: flex; height: 100vh; overflow: hidden; background-color: #0c0c0e; }
         
         .sidebar { width: 300px; background: #121216; border-right: 1px solid #1e1e24; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; flex-shrink: 0; z-index: 1000; box-shadow: 2px 0 15px rgba(0,0,0,0.6); }
+        .right-sidebar { width: 280px; background: #121216; border-left: 1px solid #1e1e24; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; flex-shrink: 0; z-index: 1000; box-shadow: -2px 0 15px rgba(0,0,0,0.6); }
         
         .main-area { flex: 1; display: flex; flex-direction: column; height: 100vh; background: #18181c; background-image: radial-gradient(#2d2d36 1px, transparent 1px); background-size: 24px 24px; position: relative; }
         .top-navbar { position: absolute; top: 15px; left: 30px; display: flex; align-items: center; gap: 15px; z-index: 50; background: #121216; padding: 8px 15px; border-radius: 8px; border: 1px solid #1e1e24; box-shadow: 0 4px 10px rgba(0,0,0,0.4); }
         .canvas-viewport { flex: 1; overflow: auto; display: flex; justify-content: center; align-items: flex-start; padding: 80px 40px 40px 40px; }
         
         .sheet-container { transform: scale(${(store.sheetZoom || 100) / 100}); transform-origin: top center; transition: transform 0.2s ease; margin-bottom: 40px; }
-        .page-sheet { background: white; width: ${PAGE_W}; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 40px; }
-        .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: white; position: relative; overflow: hidden; }
+        .page-sheet { background: white; width: ${PAGE_W}; min-height: 297mm; padding: 3mm; color: black; box-sizing: border-box; break-inside: avoid; display: flex; flex-direction: column; overflow: hidden; transition: width 0.3s ease; box-shadow: 0 10px 30px rgba(0,0,0,0.5); margin-bottom: 40px; position: relative; }
+        .page-sheet.format-a3::after { content: ''; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px dashed #ccc; z-index: 0; pointer-events: none; }
+        .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; background: white; position: relative; overflow: hidden; z-index: 1; }
         
         .cajetin { width: ${store.pageSize === 'A3' ? '204mm' : '100%'}; border-right: ${store.pageSize === 'A3' ? '2px solid black' : 'none'}; border-bottom: 2px solid black; box-sizing: border-box; flex-shrink: 0; z-index: 10; background: white; transition: width 0.3s ease; }
         .cajetin-top { display: flex; justify-content: space-between; padding: 5px 12px; border-bottom: 1px solid black; font-size: 0.8rem; font-weight: bold; color: black; }
@@ -1023,8 +1038,8 @@ export default function App() {
         .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
         .exercise-box { display: flex; flex-direction: column; position: relative; break-inside: avoid; box-sizing: border-box; border-right: 1.5px solid black; border-bottom: 1.5px solid black; background: white; overflow: hidden; touch-action: none; }
         
-        .exercise-title { padding: 8px 12px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; word-wrap: break-word; line-height: 1.3; font-family: ${store.fontFamily}; font-size: ${store.fontSize}px; text-align: justify; outline: none; color: #000; }
-        .exercise-data { font-family: ${store.fontFamily}; font-size: ${store.fontSize - 1}px; padding: 6px 12px; text-align: justify; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.3; word-wrap: break-word; color: #333; }
+        .exercise-title { padding: 8px 12px; background: #f8f9fa; border-bottom: 1.5px solid black; font-weight: bold; word-wrap: break-word; line-height: 1.3; font-family: ${store.fontFamily}; font-size: ${store.fontSize}px; text-align: justify; outline: none; color: #000; z-index:2; position:relative; }
+        .exercise-data { font-family: ${store.fontFamily}; font-size: ${store.fontSize - 1}px; padding: 6px 12px; text-align: justify; border-bottom: 1.5px dashed #ccc; font-weight: bold; outline: none; line-height: 1.3; word-wrap: break-word; color: #333; z-index:2; position:relative; }
         .btn-mini { background: #00d2ff; color: #000; border: none; font-weight: bold; cursor: pointer; border-radius: 4px; padding: 4px 8px; font-size: 0.75rem; transition: background 0.2s; }
         .btn-mini:hover { background: #ff9f43; }
         
@@ -1037,6 +1052,9 @@ export default function App() {
         .btn-panel:hover { background: #00d2ff; color: #000; border-color: #00d2ff; }
         .btn-panel:disabled { opacity: 0.3; cursor: not-allowed; }
         
+        .tool-icon-btn { width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; background: #1c1c24; border: 1px solid #2d2d3a; cursor: pointer; transition: all 0.2s; color: #e2e8f0; }
+        .tool-icon-btn:hover, .tool-icon-btn.active { background: #ff9f43; border-color: #ff9f43; color: #000; }
+        
         select, input[type="text"], input[type="number"], input[type="password"] { background: #1c1c24; color: #fff; border: 1px solid #2d2d3a; padding: 10px; border-radius: 6px; font-size: 14px; width: 100%; box-sizing: border-box; }
         .sidebar label { font-size: 12px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
         
@@ -1046,8 +1064,11 @@ export default function App() {
         @media (max-width: 768px) {
            .app-layout { flex-direction: column !important; }
            .mobile-header { display: flex !important; align-items: center; justify-content: space-between; background: #121216; padding: 10px 20px; border-bottom: 1px solid #1e1e24; z-index: 200; height: 60px; box-sizing: border-box; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-           .sidebar { position: fixed !important; top: 0; left: 0; bottom: 0; width: 85vw !important; max-width: 320px; z-index: 1000 !important; transform: translateX(-100%); transition: transform 0.3s ease; height: 100vh !important; }
+           .sidebar, .right-sidebar { position: fixed !important; top: 0; bottom: 0; width: 85vw !important; max-width: 320px; z-index: 1000 !important; transition: transform 0.3s ease; height: 100vh !important; }
+           .sidebar { left: 0; transform: translateX(-100%); }
+           .right-sidebar { right: 0; transform: translateX(100%); }
            .sidebar.open { transform: translateX(0); }
+           .right-sidebar.open { transform: translateX(0); }
            .sidebar-overlay.open { display: block !important; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 999; }
            .main-area { width: 100% !important; padding-top: 10px !important; }
            .top-navbar { position: relative !important; top: 0 !important; left: 0 !important; margin: 10px; overflow-x: auto; white-space: nowrap; flex-wrap: nowrap !important; width: calc(100% - 20px); box-sizing: border-box; }
@@ -1063,6 +1084,7 @@ export default function App() {
           .sheet-container { padding: 0 !important; margin: 0 !important; transform: scale(1) !important; } 
           @page { size: ${store.pageSize === 'A3' ? 'A3 landscape' : 'A4 portrait'}; margin: 0; }
           .page-sheet { box-shadow: none; margin: 0; padding: 3mm; page-break-after: always; display: flex; flex-direction: column; border: none; width: ${PAGE_W}; height: 297mm; } 
+          .page-sheet.format-a3::after { display: none; }
           .page-border { border: 2px solid black; flex-grow: 1; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; position: relative; }
           .exercises-grid { flex-grow: 1; display: flex; flex-wrap: wrap; align-content: flex-start; align-items: stretch; width: 100%; }
           .exercise-box { resize: none; overflow: hidden; border-right: 1.5px solid black; border-bottom: 1.5px solid black; } 
@@ -1073,11 +1095,12 @@ export default function App() {
         
         {/* HEADER EXCLUSIVO MÓVIL */}
         <div className="mobile-header no-print">
+          <button onClick={() => setSidebarOpen(true)} style={{background:'none', border:'none', color:'#fff', fontSize:'24px', cursor:'pointer', padding:0}}>☰</button>
           <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
             <div style={{width:'12px', height:'12px', borderRadius:'50%', background:'#00d2ff'}}></div>
             <h3 style={{margin:0, letterSpacing:'0.5px', color:'#00d2ff', fontSize:'16px'}}>CAD DIÉDRICO</h3>
           </div>
-          <button onClick={() => setSidebarOpen(true)} style={{background:'none', border:'none', color:'#fff', fontSize:'24px', cursor:'pointer', padding:0}}>☰</button>
+          <button onClick={() => { if(store.selectedElements.length > 0) alert('Mantén pulsado en la pantalla para abrir las herramientas.'); else alert('Selecciona algo primero.'); }} style={{background:'none', border:'none', color:'#fff', fontSize:'24px', cursor:'pointer', padding:0}}>🛠️</button>
         </div>
 
         <div className={`sidebar-overlay ${sidebarOpen && isMobile ? 'open' : ''}`} onClick={() => setSidebarOpen(false)}></div>
@@ -1188,8 +1211,10 @@ export default function App() {
               📂 Cargar
             </label>
           </div>
-          <button className="btn-panel" onClick={store.downloadData} style={{ background: '#10b981', color:'#000' }}>⬇️ Descargar (.json)</button>
-          <button className="btn-panel" onClick={handlePrint} style={{ background: '#8b5cf6', color: '#fff', padding:'15px' }}>🖨️ Imprimir Lámina</button>
+          
+          <button className="btn-panel" onClick={store.removeAllExercises} style={{ background: '#ef4444', color:'#fff', marginTop:'5px' }}>🗑️ Borrar Todas</button>
+          <button className="btn-panel" onClick={store.downloadData} style={{ background: '#10b981', color:'#000', marginTop:'5px' }}>⬇️ Descargar (.json)</button>
+          <button className="btn-panel" onClick={handlePrint} style={{ background: '#8b5cf6', color: '#fff', padding:'15px', marginTop:'5px' }}>🖨️ Imprimir Lámina</button>
         </div>
 
         {/* ESPACIO DE TRABAJO PRINCIPAL */}
@@ -1210,21 +1235,23 @@ export default function App() {
               <option value="125">125%</option>
               <option value="150">150%</option>
             </select>
-            
-            {!isMobile && <span style={{fontSize:'12px', color:'#94a3b8', fontStyle:'italic', marginLeft:'auto'}}>Izq: Selección Múltiple • Der: Opciones de Edición</span>}
           </div>
 
           <div className="canvas-viewport">
-            <div className="sheet-container">
+            <div className={`sheet-container ${store.pageSize === 'A3' ? 'format-a3' : ''}`}>
               {paginatedExercises.map((pageExs, pageIdx) => (
-                <div key={pageIdx} className="page-sheet">
+                <div key={pageIdx} className={`page-sheet ${store.pageSize === 'A3' ? 'format-a3' : ''}`}>
                   <div className="page-border">
                     
                     {pageIdx === 0 && (
                       <div className="cajetin">
                         <div className="cajetin-top">
-                          <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>Colegio Nuestra Señora de los Infantes</span>
-                          <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px'}}>1º BACHILLERATO</span>
+                          <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px', display:'flex', alignItems:'center'}}>Colegio Nuestra Señora de los Infantes</span>
+                          <div style={{display:'flex', alignItems:'stretch'}}>
+                            <span contentEditable suppressContentEditableWarning style={{outline:'none', padding:'2px', display:'flex', alignItems:'center'}}>1º BACHILLERATO</span>
+                            <div style={{borderLeft: '1.5px solid black', margin: '0 10px', height: '100%'}}></div>
+                            <span style={{width: '40px'}}></span>
+                          </div>
                         </div>
                         <div className="cajetin-bottom">
                           <span style={{flex: 1, display:'flex', alignItems:'flex-end', whiteSpace:'nowrap'}}>Nombre: <span contentEditable style={{borderBottom:'1px solid #000', flex: 1, outline:'none', marginLeft:'5px', paddingBottom:'2px'}}></span></span>
@@ -1298,10 +1325,17 @@ export default function App() {
                             <button className="btn-mini" onClick={() => store.addFreeElement(ex.id, 'plano')}>+ Pln</button>
                             
                             {/* AUTOCORRECTOR */}
-                            <button className="btn-mini" style={{ marginLeft: 'auto', background: '#a855f7', color: 'white' }} onClick={() => {
-                                const canvas = document.getElementById(`stage-${ex.id}`)?.querySelector('canvas');
-                                if(canvas) store.evaluateWithGemini(ex, canvas.toDataURL());
-                            }}>✨ Resuelve IA 2.5</button>
+                            <label className="btn-mini" style={{ marginLeft: 'auto', background: '#a855f7', color: 'white', display:'flex', alignItems:'center', cursor:'pointer' }}>
+                              ✨ Resuelve IA 2.5
+                              <input type="file" accept="image/*, application/pdf" style={{display:'none'}} onChange={(e) => {
+                                const file = e.target.files?.[0]; if (!file) return;
+                                const r = new FileReader();
+                                r.onload = (ev) => {
+                                  const dataUrl = ev.target?.result as string;
+                                  store.evaluateWithGemini(ex, dataUrl, file.type);
+                                }; r.readAsDataURL(file); e.target.value = '';
+                              }} />
+                            </label>
                           </div>
 
                           <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
@@ -1317,114 +1351,142 @@ export default function App() {
           </div>
         </div>
 
-      </div>
+        {/* COLUMNA DERECHA FIJA (HERRAMIENTAS Y RESTRICCIONES) */}
+        <div className="right-sidebar no-print">
+          <h3 style={{ color: '#00d2ff', margin: 0, fontSize:'15px', textTransform:'uppercase', letterSpacing:'1px' }}>🛠️ Herramientas</h3>
+          
+          <div style={{display:'flex', gap:'10px'}}>
+            <button className={`tool-icon-btn ${store.activeTool === 'pointer' ? 'active' : ''}`} onClick={() => store.setPageConfig({activeTool: 'pointer'})} title="Modo Selección (Flecha)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2l12 11.2-5.8.8 3.6 6.6-2.4 1.3-3.6-6.6-3.8 3.7z"/></svg>
+            </button>
+            <button className={`tool-icon-btn ${store.activeTool === 'pan' ? 'active' : ''}`} onClick={() => { store.setPageConfig({activeTool: 'pan'}); store.clearSelection(); }} title="Modo Navegación Libre (Mano)">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M13 1v5h-2v-5h2zM6 11h-5v2h5v-2zM23 11h-5v2h5v-2zM13 18v5h-2v-5h2z"/></svg>
+            </button>
+          </div>
 
-      {/* MENÚ CONTEXTUAL (FLOTANTE EN COORDENADAS EXACTAS) */}
-      {store.contextMenu && (
-        <>
-          <div style={{position:'fixed', top:0, left:0, right:0, bottom:0, background:'transparent', zIndex:9998}} onClick={() => store.setContextMenu(null)} onContextMenu={(e) => { e.preventDefault(); store.setContextMenu(null); }} />
-          <div style={{position: 'fixed', top: store.contextMenu.y, left: store.contextMenu.x, background: '#1c1c24', border: '1px solid #00d2ff', borderRadius: '8px', padding: '12px', zIndex: 9999, boxShadow: '0 8px 16px rgba(0,0,0,0.6)', width: 'max-content', maxWidth: '320px', maxHeight: '80vh', overflowY: 'auto'}}>
+          <hr style={{border:'none', borderTop:'1px solid #444', margin:'5px 0'}} />
+
+          <h3 style={{ color: '#00d2ff', margin: 0, fontSize:'15px', textTransform:'uppercase', letterSpacing:'1px' }}>🔗 Vinculación</h3>
+          <p style={{fontSize:'12px', color:'#94a3b8', marginTop:'0', lineHeight:'1.4'}}>Con la flecha activa, haz <b>Clic Izquierdo</b> sobre dos trazas o rectas en el papel para vincularlas.</p>
+          
+          <div style={{background:'#1e1e2f', padding:'12px', borderRadius:'6px', border:'1px solid #444', minHeight:'120px', display:'flex', flexDirection:'column'}}>
+            {(store.selectedElements || []).length === 0 && <span style={{color:'#64748b', fontStyle:'italic', fontSize:'13px', margin:'auto', textAlign:'center'}}>Ningún elemento seleccionado...</span>}
             
-            {store.selectedElements.length === 2 && store.selectedElements[0].exId === store.contextMenu.exId && (
-              <div style={{ marginBottom: '15px', paddingBottom: '15px', borderBottom: '1px dashed #444' }}>
-                <div style={{fontSize: '0.85em', color: '#ff9f43', fontWeight: 'bold', marginBottom: '8px', textTransform:'uppercase'}}>Vincular Selección:</div>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button style={{flex: 1, padding: '8px', cursor: 'pointer', color: '#000', background: '#ff9f43', border: 'none', borderRadius: '4px', fontWeight: 'bold'}} onClick={() => { store.applyConstraint('parallel'); store.setContextMenu(null); }}>║ Paralelos</button>
-                  <button style={{flex: 1, padding: '8px', cursor: 'pointer', color: '#000', background: '#ff9f43', border: 'none', borderRadius: '4px', fontWeight: 'bold'}} onClick={() => { store.applyConstraint('perpendicular'); store.setContextMenu(null); }}>⟂ Perpendiculares</button>
-                </div>
+            {(store.selectedElements || []).map((item) => (
+              <div key={item.id} style={{display:'flex', background:'#363654', padding:'8px 10px', borderRadius:'4px', marginBottom:'6px', borderLeft:'4px solid #ff9f43', fontWeight:'bold', fontSize:'13px', color:'#fff'}}>
+                {item.label}
+              </div>
+            ))}
+
+            {(store.selectedElements || []).length === 2 && (
+              <div style={{marginTop:'auto', display:'flex', flexDirection:'column', gap:'8px', paddingTop:'15px'}}>
+                <button className="btn-panel" style={{background:'#ff9f43', color:'#000'}} onClick={() => store.applyConstraint('parallel')}>║ Hacer Paralelos</button>
+                <button className="btn-panel" style={{background:'#ff9f43', color:'#000'}} onClick={() => store.applyConstraint('perpendicular')}>⟂ Hacer Perpendiculares</button>
               </div>
             )}
-
-            <div style={{fontSize: '0.75em', color: '#00d2ff', paddingBottom: '6px', borderBottom: '1px solid #3a3a44', marginBottom: '10px', textTransform:'uppercase', letterSpacing:'1px', fontWeight:'bold'}}>Editar Elemento:</div>
-            
-            {store.contextMenu.items.map((it, i) => {
-              const isSys = it.id.startsWith('sys_');
-              const isLineOrPlane = it.id.startsWith('seg') || it.id.startsWith('pl');
-              
-              let rId = it.id; if (rId.includes('_')) rId = rId.split('_')[1];
-              if (it.id.startsWith('pt_')) {
-                  let thePt = store.exercises.find(e => e.id === store.contextMenu!.exId)?.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
-                  if(thePt) rId = thePt.id;
-              }
-              const hasConstraint = store.constraints.some(c => c.elem1Id === rId || c.elem2Id === rId);
-
-              return (
-              <div key={i} style={{ marginBottom: i < store.contextMenu!.items.length-1 ? '15px' : '0' }}>
-                <div style={{fontSize: '0.9em', color: '#fff', fontWeight: 'bold', marginBottom: '8px', textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>{it.label}</div>
-                <div style={{ display: 'flex', gap: '6px', flexWrap:'wrap' }}>
-                  
-                  {!isSys && (
-                    <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s'}}
-                         onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
-                         onClick={() => {
-                            let type: 'punto' | 'recta' | 'plano' = it.type;
-                            let oldName = it.label.replace(/(Punto |Recta |Plano )/g, '');
-                            let newName = prompt("Introduce el nuevo nombre (déjalo en blanco para ocultarlo):", oldName);
-                            if (newName !== null) store.updateName(store.contextMenu!.exId, type, rId, newName);
-                            store.setContextMenu(null);
-                         }}>✏️ Nombre</div>
-                  )}
-
-                  {!isSys && isLineOrPlane && (
-                     <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                          onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
-                          onClick={() => {
-                             let type: 'recta' | 'plano' = it.id.startsWith('pl') ? 'plano' : 'recta';
-                             store.toggleLineStyle(store.contextMenu!.exId, type, rId);
-                             store.setContextMenu(null);
-                          }}>🔄 Línea</div>
-                  )}
-
-                  {!isSys && (
-                     <label style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#10b981', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s', position:'relative', overflow:'hidden'}}
-                          onMouseEnter={e => e.currentTarget.style.background = '#34d399'} onMouseLeave={e => e.currentTarget.style.background = '#10b981'} title="Cambiar Color">
-                        🎨 Color
-                        <input type="color" defaultValue="#000000" style={{position:'absolute', opacity:0, top:0, left:0, width:'100%', height:'100%', cursor:'pointer'}}
-                               onChange={(e) => { let type: 'punto' | 'recta' | 'plano' = it.type; store.updateColor(store.contextMenu!.exId, type, rId, e.target.value); }} />
-                     </label>
-                  )}
-                  
-                  {!isSys && (
-                    <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                         onMouseEnter={e => { e.currentTarget.style.background = '#475569'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; }}
-                         onClick={() => {
-                            let type: 'punto' | 'recta' | 'plano' = it.type;
-                            store.updateName(store.contextMenu!.exId, type, rId, "");
-                            store.setContextMenu(null);
-                         }}>🆑 Ocultar</div>
-                  )}
-
-                  {!isSys && (
-                    <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#ef4444', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                         onMouseEnter={e => e.currentTarget.style.background = '#f87171'} onMouseLeave={e => e.currentTarget.style.background = '#ef4444'}
-                         onClick={() => {
-                            let type: 'punto' | 'recta' | 'plano' = it.type;
-                            store.removeElement(store.contextMenu!.exId, type, rId);
-                            store.setContextMenu(null);
-                         }}>🗑️ Eliminar</div>
-                  )}
-
-                  {!isSys && hasConstraint && (
-                    <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#8b5cf6', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s'}}
-                         onMouseEnter={e => e.currentTarget.style.background = '#a78bfa'} onMouseLeave={e => e.currentTarget.style.background = '#8b5cf6'}
-                         onClick={() => {
-                            store.removeConstraintsFor(rId);
-                            store.setContextMenu(null);
-                         }}>🔗 Desvincular</div>
-                  )}
-                </div>
-                {it.id?.startsWith('pl') && (
-                   <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', marginTop: '6px', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign: 'center', transition:'all 0.2s'}}
-                        onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
-                        onClick={() => { store.togglePlaneType(store.contextMenu!.exId, rId); store.setContextMenu(null); }}>
-                       ⮂ Alternar Plano Paralelo a LT
-                   </div>
-                )}
-              </div>
-            )})}
           </div>
-        </>
-      )}
+
+          {(store.constraints || []).length > 0 && (
+            <div style={{marginTop:'5px'}}>
+              <label style={{color:'#00d2ff', fontWeight:'bold', marginBottom:'8px', display:'block'}}>Vínculos Activos:</label>
+              <div style={{maxHeight:'150px', overflowY:'auto', display:'flex', flexDirection:'column', gap:'6px'}}>
+                {store.constraints.map(c => (
+                  <div key={c.id} style={{fontSize:'13px', background:'#363654', padding:'8px 10px', borderRadius:'4px', display:'flex', justifyContent:'space-between', alignItems:'center', border:'1px solid #555', color:'#fff'}}>
+                    <span style={{fontWeight:'bold'}}>{c.type === 'parallel' ? '║ Paralelismo' : '⟂ Perpendicularidad'}</span>
+                    <button style={{background:'#ef4444', border:'none', color:'white', cursor:'pointer', borderRadius:'50%', width:'22px', height:'22px', fontWeight:'bold', display:'flex', justifyContent:'center', alignItems:'center'}} onClick={() => store.removeConstraint(c.id)}>X</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <hr style={{border:'none', borderTop:'1px solid #444', margin:'5px 0'}} />
+
+          <h3 style={{ color: '#00d2ff', margin: 0, fontSize:'15px', textTransform:'uppercase', letterSpacing:'1px' }}>✏️ Edición</h3>
+          <p style={{fontSize:'12px', color:'#94a3b8', marginTop:'0', lineHeight:'1.4'}}>Haz <b>Clic Derecho</b> (o mantén pulsado en el móvil) sobre cualquier elemento en el folio.</p>
+          
+          {store.contextMenu && (
+             <div style={{background:'#1e1e2f', padding:'12px', borderRadius:'6px', border:'1px solid #00d2ff'}}>
+               {store.contextMenu.items.map((it, i) => {
+                 const isSys = it.id.startsWith('sys_');
+                 const isLineOrPlane = it.id.startsWith('seg') || it.id.startsWith('pl');
+                 let rId = it.id; if (rId.includes('_')) rId = rId.split('_')[1];
+                 if (it.id.startsWith('pt_')) {
+                     let thePt = store.exercises.find(e => e.id === store.contextMenu!.exId)?.state.pts.find((p:any) => p.nodes.some((n:any) => n.id === rId));
+                     if(thePt) rId = thePt.id;
+                 }
+                 return (
+                   <div key={i} style={{ marginBottom: i < store.contextMenu!.items.length-1 ? '15px' : '0' }}>
+                     <div style={{fontSize: '0.9em', color: '#fff', fontWeight: 'bold', marginBottom: '8px', textShadow:'0 1px 2px rgba(0,0,0,0.5)'}}>{it.label}</div>
+                     <div style={{ display: 'flex', gap: '6px', flexWrap:'wrap' }}>
+                       {!isSys && (
+                         <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s', flex:1}}
+                              onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
+                              onClick={() => {
+                                 let type: 'punto' | 'recta' | 'plano' = it.type;
+                                 let oldName = it.label.replace(/(Punto |Recta |Plano )/g, '');
+                                 let newName = prompt("Introduce el nuevo nombre (déjalo en blanco para ocultarlo):", oldName);
+                                 if (newName !== null) store.updateName(store.contextMenu!.exId, type, rId, newName);
+                                 store.setContextMenu(null);
+                              }}>✏️ Nombre</div>
+                       )}
+
+                       {!isSys && isLineOrPlane && (
+                          <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s', flex:1}}
+                               onMouseEnter={e => { e.currentTarget.style.background = '#00d2ff'; e.currentTarget.style.color = '#000'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; e.currentTarget.style.color = '#e2e8f0'; }}
+                               onClick={() => {
+                                  let type: 'recta' | 'plano' = it.id.startsWith('pl') ? 'plano' : 'recta';
+                                  store.toggleLineStyle(store.contextMenu!.exId, type, rId);
+                                  store.setContextMenu(null);
+                               }}>🔄 Línea</div>
+                       )}
+
+                       {!isSys && (
+                          <label style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#10b981', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign:'center', transition:'all 0.2s', position:'relative', overflow:'hidden', flex:1}}
+                               onMouseEnter={e => e.currentTarget.style.background = '#34d399'} onMouseLeave={e => e.currentTarget.style.background = '#10b981'} title="Cambiar Color">
+                             🎨 Color
+                             <input type="color" defaultValue="#000000" style={{position:'absolute', opacity:0, top:0, left:0, width:'100%', height:'100%', cursor:'pointer'}}
+                                    onChange={(e) => { let type: 'punto' | 'recta' | 'plano' = it.type; store.updateColor(store.contextMenu!.exId, type, rId, e.target.value); }} />
+                          </label>
+                       )}
+                       
+                       {!isSys && (
+                         <div style={{padding: '8px 12px', cursor: 'pointer', color: '#e2e8f0', background: '#2d2d3a', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s', flex:1}}
+                              onMouseEnter={e => { e.currentTarget.style.background = '#475569'; }} onMouseLeave={e => { e.currentTarget.style.background = '#2d2d3a'; }}
+                              onClick={() => {
+                                 let type: 'punto' | 'recta' | 'plano' = it.type;
+                                 store.updateName(store.contextMenu!.exId, type, rId, "");
+                                 store.setContextMenu(null);
+                              }}>🆑 Ocultar</div>
+                       )}
+
+                       {!isSys && (
+                         <div style={{padding: '8px 12px', cursor: 'pointer', color: 'white', background: '#ef4444', borderRadius: '4px', fontSize: '0.85em', textAlign:'center', transition:'all 0.2s', flex:1}}
+                              onMouseEnter={e => e.currentTarget.style.background = '#f87171'} onMouseLeave={e => e.currentTarget.style.background = '#ef4444'}
+                              onClick={() => {
+                                 let type: 'punto' | 'recta' | 'plano' = it.type;
+                                 store.removeElement(store.contextMenu!.exId, type, rId);
+                                 store.setContextMenu(null);
+                              }}>🗑️ Borrar</div>
+                       )}
+                     </div>
+                     {it.id?.startsWith('pl') && (
+                        <div style={{padding: '8px 12px', cursor: 'pointer', color: '#000', background: '#f59e0b', marginTop: '6px', borderRadius: '4px', fontSize: '0.85em', fontWeight: 'bold', textAlign: 'center', transition:'all 0.2s'}}
+                             onMouseEnter={e => e.currentTarget.style.background = '#fbbf24'} onMouseLeave={e => e.currentTarget.style.background = '#f59e0b'}
+                             onClick={() => { store.togglePlaneType(store.contextMenu!.exId, rId); store.setContextMenu(null); }}>
+                            ⮂ Alternar Plano Paralelo a LT
+                        </div>
+                     )}
+                   </div>
+                 )
+               })}
+             </div>
+          )}
+          {!store.contextMenu && <div style={{color:'#64748b', fontStyle:'italic', fontSize:'13px', textAlign:'center', marginTop:'10px'}}>Esperando selección...</div>}
+
+        </div>
+
+      </div>
 
       {/* MODAL DEL AUTOCORRECTOR GEMINI 2.5 */}
       {store.evaluation.isOpen && (
@@ -1432,7 +1494,7 @@ export default function App() {
               <div style={{background:'#1e1e2f', padding:'24px', borderRadius:'10px', width:'100%', maxWidth:'750px', border:'2px solid #a855f7', display:'flex', flexDirection:'column', gap:'20px', maxHeight:'90vh', boxShadow:'0 10px 40px rgba(0,0,0,0.8)'}}>
                   
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'center'}}>
-                      <h3 style={{color:'#d8b4fe', margin:0, fontSize:'20px', display:'flex', alignItems:'center', gap:'10px'}}>✨ Motor de Corrección IA <span style={{fontSize:'12px', background:'#a855f7', color:'#fff', padding:'2px 8px', borderRadius:'12px'}}>Gemini 2.5</span></h3>
+                      <h3 style={{color:'#d8b4fe', margin:0, fontSize:'20px', display:'flex', alignItems:'center', gap:'10px'}}>✨ Motor de Solución IA <span style={{fontSize:'12px', background:'#a855f7', color:'#fff', padding:'2px 8px', borderRadius:'12px'}}>Gemini 2.5</span></h3>
                       <button onClick={()=>store.setEvaluation({isOpen: false})} style={{background:'none', border:'none', color:'white', fontSize:'24px', cursor:'pointer', padding:0}}>✕</button>
                   </div>
                   
@@ -1448,7 +1510,11 @@ export default function App() {
                       
                       {/* PREVISUALIZACIÓN DEL EJERCICIO */}
                       <div style={{flex: 1, background:'#0c0c0e', borderRadius:'6px', padding:'10px', border:'1px solid #444', display:'flex', justifyContent:'center', alignItems:'center'}}>
-                          <img src={store.evaluation.img} style={{maxWidth:'100%', maxHeight: isMobile ? '150px' : '300px', objectFit:'contain', background:'white'}} alt="Captura del ejercicio" />
+                          {store.evaluation.mimeType === 'application/pdf' ? (
+                             <div style={{color:'#00d2ff', textAlign:'center'}}>📄 PDF Cargado<br/><span style={{fontSize:'12px', color:'#aaa'}}>(Gemini leerá el documento)</span></div>
+                          ) : (
+                             <img src={store.evaluation.fileData} style={{maxWidth:'100%', maxHeight: isMobile ? '150px' : '300px', objectFit:'contain', background:'white'}} alt="Captura del ejercicio" />
+                          )}
                       </div>
                       
                       {/* PANEL DE RESULTADOS */}
@@ -1457,7 +1523,7 @@ export default function App() {
                               <div style={{display:'flex', flexDirection:'column', justifyContent:'center', alignItems:'center', height:'100%', color:'#d8b4fe', gap:'15px'}}>
                                   <div style={{width:'40px', height:'40px', border:'4px solid #a855f7', borderTop:'4px solid transparent', borderRadius:'50%', animation:'spin 1s linear infinite'}}></div>
                                   <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-                                  <span>Analizando coordenadas, trazas y resolución espacial...</span>
+                                  <span>Analizando enunciado, coordenadas y geometría espacial...</span>
                               </div>
                           ) : (
                               <div style={{whiteSpace:'pre-wrap', color: store.evaluation.result.includes('Error') ? '#ef4444' : '#e2e8f0'}}>{store.evaluation.result || 'Esperando inicio...'}</div>
@@ -1467,7 +1533,7 @@ export default function App() {
                   
                   {store.geminiKey && !store.evaluation.loading && (
                       <div style={{display:'flex', justifyContent:'flex-end'}}>
-                          <button className="btn-panel" onClick={() => store.evaluateWithGemini(store.exercises.find(e=>e.id === store.evaluation.exId)!, store.evaluation.img)} style={{background:'#a855f7', color:'white', padding:'12px 24px', fontSize:'15px'}}>↻ Generar Solución</button>
+                          <button className="btn-panel" onClick={() => store.evaluateWithGemini(store.exercises.find(e=>e.id === store.evaluation.exId)!, store.evaluation.fileData, store.evaluation.mimeType)} style={{background:'#a855f7', color:'white', padding:'12px 24px', fontSize:'15px'}}>↻ Generar Solución Ideal</button>
                       </div>
                   )}
               </div>
